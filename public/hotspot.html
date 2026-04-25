@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Secure Validation | Matricule & Email Form</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; }
+        body { min-height: 100vh; background: linear-gradient(145deg, #eef2fa 0%, #dce5f0 100%); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+        .form-card { max-width: 620px; width: 100%; background: rgba(255, 255, 255, 0.98); border-radius: 2rem; box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.05); overflow: hidden; transition: all 0.2s ease; }
+        .form-header { background: #0f2c3b; padding: 2rem 2rem 1.8rem; color: white; text-align: center; }
+        .form-header h1 { font-size: 1.85rem; font-weight: 600; letter-spacing: -0.3px; margin-bottom: 0.4rem; }
+        .form-header p { font-size: 0.9rem; opacity: 0.85; font-weight: 400; }
+        .form-body { padding: 2rem 2rem 2rem; }
+        .input-group { margin-bottom: 1.8rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .input-group label { font-weight: 600; font-size: 0.9rem; color: #1e2f3e; letter-spacing: -0.2px; display: flex; align-items: center; gap: 8px; }
+        .required-star { color: #e03a3a; font-size: 1.1rem; margin-left: 4px; }
+        .input-field { width: 100%; padding: 0.9rem 1.2rem; font-size: 1rem; border: 2px solid #e2e8f0; border-radius: 1.2rem; background-color: #ffffff; transition: all 0.2s ease; outline: none; color: #0f172a; font-weight: 500; }
+        .input-field:focus { border-color: #2c6e9e; box-shadow: 0 0 0 3px rgba(44, 110, 158, 0.2); }
+        .validate-btn { width: 100%; background: #0f3b4f; color: white; border: none; padding: 1rem 1.2rem; font-size: 1.05rem; font-weight: 600; border-radius: 2rem; cursor: pointer; transition: all 0.2s ease; margin-top: 0.8rem; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1); letter-spacing: 0.3px; }
+        .validate-btn:hover { background: #1c5270; transform: translateY(-2px); box-shadow: 0 10px 20px -5px rgba(15, 59, 79, 0.3); }
+        .validate-btn:disabled { background: #64748b; cursor: not-allowed; transform: none; }
+        .result-panel { margin-top: 2rem; background: #f1f5f9; border-radius: 1.5rem; padding: 1rem 1.3rem; border-left: 5px solid #2c6e9e; transition: 0.2s; }
+        .result-title { font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: #1e475b; margin-bottom: 0.65rem; }
+        .result-content { font-size: 0.9rem; color: #0f2c3b; word-break: break-word; line-height: 1.4; }
+        .success-message { color: #0b6e4f; font-weight: 600; }
+        .error-summary { color: #b91c1c; font-weight: 500; }
+        .info-message { color: #1e475b; font-weight: 500; }
+        .error-message { font-size: 0.75rem; color: #e53e3e; margin-top: 0.3rem; font-weight: 500; }
+        .helper-text { font-size: 0.7rem; color: #5a6e7c; margin-top: 0.2rem; }
+        @media (max-width: 480px) { .form-body { padding: 1.5rem; } .form-header { padding: 1.5rem 1rem; } .form-header h1 { font-size: 1.5rem; } }
+    </style>
+</head>
+<body>
+
+<div class="form-card">
+    <div class="form-header">
+        <h1>🔐 Access Verification</h1>
+        <p>Please provide your credentials for validation</p>
+    </div>
+
+    <div class="form-body">
+        <div class="input-group">
+            <label>👤 Username <span class="required-star">*</span></label>
+            <input type="text" id="username" class="input-field" placeholder="e.g., Ngahame Lael" autocomplete="off">
+            <div class="error-message" id="usernameError"></div>
+            <div class="helper-text">2–40 characters allowed.</div>
+        </div>
+
+        <div class="input-group">
+            <label>🎓 Matricule <span class="required-star">*</span></label>
+            <input type="text" id="matricule" class="input-field" placeholder="e.g., ICTU20283020" autocomplete="off">
+            <div class="error-message" id="matriculeError"></div>
+            <div class="helper-text">4–20 characters, alphanumeric.</div>
+        </div>
+
+        <div class="input-group">
+            <label>✉️ Email Address <span class="required-star">*</span></label>
+            <input type="email" id="email" class="input-field" placeholder="name@example.com" autocomplete="off">
+            <div class="error-message" id="emailError"></div>
+            <div class="helper-text">Valid email format required.</div>
+        </div>
+
+        <button class="validate-btn" id="validateBtn">✓ Validate & Register</button>
+
+        <div class="result-panel" id="resultPanel">
+            <div class="result-title">📋 STATUS</div>
+            <div class="result-content" id="resultMessage">
+                Fill in all fields and click "Validate & Register"
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        const usernameInput = document.getElementById('username');
+        const matriculeInput = document.getElementById('matricule');
+        const emailInput = document.getElementById('email');
+        const validateBtn = document.getElementById('validateBtn');
+        const resultMessageDiv = document.getElementById('resultMessage');
+
+        // Derive the server URL from the current page address so it works
+        // even if the hotspot IP or port changes.
+        const SERVER_URL = window.location.origin;
+
+        // Test connectivity on page load
+        async function testConnection() {
+            resultMessageDiv.innerHTML = '<span class="info-message">⏳ Checking connection to server...</span>';
+            try {
+                const response = await fetch(SERVER_URL + '/ping?t=' + Date.now(), {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                if (response.ok) {
+                    resultMessageDiv.innerHTML = '<span class="success-message">✅ Connected to server! You can now register.</span>';
+                } else {
+                    resultMessageDiv.innerHTML = '<span class="error-summary">⚠️ Server responded with error ' + response.status + '. Please reload the page.</span>';
+                }
+            } catch (err) {
+                resultMessageDiv.innerHTML = '<span class="error-summary">❌ Cannot reach server at ' + SERVER_URL + '<br>Error: ' + err.message + '<br><br><b>Troubleshooting:</b><br>1. Make sure you are connected to the lecturer\'s Wi-Fi hotspot<br>2. Ask the lecturer to check that <code>node server.js</code> is running on their PC<br>3. Try reloading this page</span>';
+            }
+        }
+
+        // Run connectivity test immediately
+        testConnection();
+
+        function validateUsername(raw) {
+            const trimmed = raw.trim();
+            if (!trimmed) return '❌ Username is required.';
+            if (trimmed.length < 2 || trimmed.length > 40) return '❌ Must be 2-40 characters.';
+            if (!/^[a-zA-Z0-9\s_.-]+$/.test(trimmed)) return '❌ Invalid characters used.';
+            return '';
+        }
+
+        function validateMatricule(raw) {
+            const trimmed = raw.trim();
+            if (!trimmed) return '❌ Matricule is required.';
+            if (trimmed.length < 4 || trimmed.length > 20) return '❌ Must be 4-20 characters.';
+            if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) return '❌ Only Alphanumeric, _ and - allowed.';
+            return '';
+        }
+
+        function validateEmail(raw) {
+            const trimmed = raw.trim();
+            if (!trimmed) return '❌ Email is required.';
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return '❌ Invalid email format.';
+            return '';
+        }
+
+        async function submitData(data) {
+            validateBtn.disabled = true;
+            resultMessageDiv.innerHTML = "⏳ Sending registration to server...";
+
+            try {
+                const response = await fetch(SERVER_URL + '/connect', {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams(data)
+                });
+
+                const responseText = await response.text();
+
+                if (response.ok) {
+                    resultMessageDiv.innerHTML = `<span class="success-message">✅ ${responseText}</span>`;
+                    usernameInput.value = '';
+                    matriculeInput.value = '';
+                    emailInput.value = '';
+                } else {
+                    resultMessageDiv.innerHTML = `<span class="error-summary">❌ Server Error (${response.status}): ${responseText}</span>`;
+                }
+            } catch (err) {
+                resultMessageDiv.innerHTML = `<span class="error-summary">❌ Network Error: ${err.message}<br><br>Make sure:<br>1. You are connected to the lecturer's hotspot<br>2. The server is running on the lecturer's PC<br>3. Try reloading this page</span>`;
+            } finally {
+                validateBtn.disabled = false;
+            }
+        }
+
+        validateBtn.addEventListener('click', () => {
+            const uErr = validateUsername(usernameInput.value);
+            const mErr = validateMatricule(matriculeInput.value);
+            const eErr = validateEmail(emailInput.value);
+
+            document.getElementById('usernameError').textContent = uErr;
+            document.getElementById('matriculeError').textContent = mErr;
+            document.getElementById('emailError').textContent = eErr;
+
+            if (!uErr && !mErr && !eErr) {
+                submitData({
+                    username: usernameInput.value.trim(),
+                    matricule: matriculeInput.value.trim(),
+                    email: emailInput.value.trim()
+                });
+            } else {
+                resultMessageDiv.innerHTML = `<span class="error-summary">⚠️ Please fix the errors above.</span>`;
+            }
+        });
+    })();
+</script>
+</body>
+</html>
+
