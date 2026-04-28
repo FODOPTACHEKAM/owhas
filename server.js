@@ -81,7 +81,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // ====== POST /api/session-init - Initialize a new PIN-scoped session ======
 app.post('/api/session-init', (req, res) => {
-    const { courseName, courseCode, lecturerId, pin, sessionToken } = req.body;
+    const { courseName, courseCode, lecturerId, lecturerName, pin, sessionToken, durationMinutes } = req.body;
 
     if (!pin || !/^\d{6}$/.test(pin)) {
         return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
@@ -91,11 +91,13 @@ app.post('/api/session-init', (req, res) => {
         return res.status(409).json({ error: 'PIN already in use by an active session' });
     }
 
-    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours
+    const duration = typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : 240;
+    const expiresAt = new Date(Date.now() + duration * 60 * 1000);
     activeSessions.set(pin, {
         courseName: courseName || 'Untitled Course',
         courseCode: courseCode || null,
         lecturerId: lecturerId || 'unknown',
+        lecturerName: lecturerName || lecturerId || 'Unknown Lecturer',
         sessionToken: sessionToken || null,
         attendees: [],
         createdAt: new Date(),
@@ -120,6 +122,7 @@ app.post('/api/validate-pin', (req, res) => {
         courseName: session.courseName,
         courseCode: session.courseCode,
         lecturerId: session.lecturerId,
+        lecturerName: session.lecturerName,
     });
 });
 

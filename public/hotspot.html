@@ -177,7 +177,7 @@
                     sessionDetailsDiv.innerHTML =
                         '<strong>' + (data.courseName || 'Unknown Course') + '</strong>' +
                         (data.courseCode ? ' (' + data.courseCode + ')' : '') +
-                        '<br>Lecturer: ' + (data.lecturerId || 'Unknown');
+                        '<br>Lecturer: ' + (data.lecturerName || data.lecturerId || 'Unknown');
                     sessionInfoPanel.style.display = 'block';
                     registrationForm.style.display = 'block';
                     resultMessageDiv.innerHTML = '<span class="success-message">✅ PIN verified! Fill in your details to register.</span>';

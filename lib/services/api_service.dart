@@ -1,13 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'server_config.dart';
 
 /// Service for communicating with the Node.js Hotspot server
 class ApiService {
-  // Use your Windows Mobile Hotspot IP.
-  // From ipconfig, your hotspot adapter is "Connexion au réseau local* 10"
-  // with IPv4 Address: 192.168.137.1
-  static const String baseUrl = 'http://192.168.137.1:5501';
+  /// Dynamic base URL auto-detected for emulator (10.0.2.2) or hotspot (192.168.137.1)
+  static String get baseUrl => ServerConfig().baseUrl;
 
   String? _sessionPin;
   String? _sessionToken;

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/attendance_provider.dart';
 import '../services/signature_service.dart';
+import '../services/server_config.dart';
 import '../theme.dart';
 
 class LecturerDashboardPage extends StatefulWidget {
@@ -471,14 +472,13 @@ class _SessionInfoCard extends StatelessWidget {
 
   const _SessionInfoCard({required this.session});
 
-  // Base URL for the permanent poster QR — never changes
-  static const String _baseQrUrl = 'http://192.168.137.1:5501/public/hotspot.html';
+  /// Dynamic QR URL auto-detected for emulator or hotspot
+  String get _baseQrUrl => ServerConfig().baseQrUrl;
 
   @override
   Widget build(BuildContext context) {
     final pin = session.sessionPin as String?;
-    final token = session.sessionToken as String?;
-    final tokenQrUrl = token != null ? '$_baseQrUrl?s=$token' : null;
+    final endTime = session.startTime.add(Duration(minutes: session.durationMinutes));
 
     return Card(
       child: Padding(
@@ -514,44 +514,30 @@ class _SessionInfoCard extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
+                        'Auto-ends: ${DateFormat('HH:mm').format(endTime)}',
+                        style: context.textStyles.bodySmall?.withColor(
+                          Colors.redAccent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
                         'Req. connection: ${session.requiredConnectionMinutes} min',
                         style: context.textStyles.bodySmall?.withColor(
                           Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      FutureBuilder<String?>(
-                        future: SignatureService.loadLecturerName(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasData && snapshot.data != null) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: AppSpacing.xs),
-                              child: Text(
-                                'Lecturer: ${snapshot.data}',
-                                style: context.textStyles.bodySmall?.withColor(
-                                  Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
-                      ),
+                      if (session.lecturerName != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'Lecturer: ${session.lecturerName}',
+                          style: context.textStyles.bodySmall?.withColor(
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                // Token QR (ad-hoc fallback) — smaller, optional
-                if (tokenQrUrl != null)
-                  Container(
-                    padding: AppSpacing.paddingSm,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                    ),
-                    child: QrImageView(
-                      data: tokenQrUrl,
-                      size: 80,
-                    ),
-                  ),
               ],
             ),
             const Divider(height: AppSpacing.lg),

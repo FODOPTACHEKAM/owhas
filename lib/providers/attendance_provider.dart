@@ -49,8 +49,18 @@ class AttendanceProvider extends ChangeNotifier {
     try {
       _activeSession = await _storage.getActiveSession();
       if (_activeSession != null) {
-        _syncApiServiceSession();
-        await refreshRecords();
+        // Check if session has expired (auto-end)
+        final expiryTime = _activeSession!.startTime.add(
+          Duration(minutes: _activeSession!.durationMinutes),
+        );
+        if (DateTime.now().isAfter(expiryTime)) {
+          await _sessionService.endSession(_activeSession!.id);
+          _apiService.clearSession();
+          _activeSession = null;
+        } else {
+          _syncApiServiceSession();
+          await refreshRecords();
+        }
       }
       _error = null;
     } catch (e) {
@@ -75,9 +85,11 @@ class AttendanceProvider extends ChangeNotifier {
   Future<void> createSession({
     required String courseName,
     String? courseCode,
+    required String lecturerName,
     required int gracePeriodMinutes,
     required int requiredConnectionMinutes,
     required int maxAttendanceCount,
+    required int durationMinutes,
   }) async {
     _isLoading = true;
     _error = null;
@@ -88,9 +100,11 @@ class AttendanceProvider extends ChangeNotifier {
         courseName: courseName,
         courseCode: courseCode,
         lecturerId: 'lecturer_1', // In a real app, get from auth
+        lecturerName: lecturerName,
         gracePeriodMinutes: gracePeriodMinutes,
         requiredConnectionMinutes: requiredConnectionMinutes,
         maxAttendanceCount: maxAttendanceCount,
+        durationMinutes: durationMinutes,
         sessionNumber: _sessionNumber,
       );
       _currentRecords = [];

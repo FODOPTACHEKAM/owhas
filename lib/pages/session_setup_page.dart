@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/attendance_provider.dart';
+import '../services/signature_service.dart';
 import '../theme.dart';
 
 /// Page for setting up a new attendance session
@@ -14,21 +15,40 @@ class SessionSetupPage extends StatefulWidget {
 
 class _SessionSetupPageState extends State<SessionSetupPage> {
   final _formKey = GlobalKey<FormState>();
+  final _lecturerNameController = TextEditingController();
   final _courseNameController = TextEditingController();
   final _courseCodeController = TextEditingController();
   final _gracePeriodController = TextEditingController(text: '5');
   final _connectionTimeController = TextEditingController(text: '15');
   final _maxAttendanceController = TextEditingController(text: '30');
+  final _durationController = TextEditingController(text: '60');
 
   bool _hasUploadedPrevious = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedLecturerName();
+  }
+
+  Future<void> _loadSavedLecturerName() async {
+    final savedName = await SignatureService.loadLecturerName();
+    if (savedName != null && savedName.isNotEmpty && mounted) {
+      setState(() {
+        _lecturerNameController.text = savedName;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _lecturerNameController.dispose();
     _courseNameController.dispose();
     _courseCodeController.dispose();
     _gracePeriodController.dispose();
     _connectionTimeController.dispose();
     _maxAttendanceController.dispose();
+    _durationController.dispose();
     super.dispose();
   }
 
@@ -60,13 +80,21 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<AttendanceProvider>();
-    
+    final lecturerName = _lecturerNameController.text.trim();
+
+    // Persist lecturer name for future sessions
+    if (lecturerName.isNotEmpty) {
+      await SignatureService.saveLecturerName(lecturerName);
+    }
+
     await provider.createSession(
       courseName: _courseNameController.text,
       courseCode: _courseCodeController.text.isNotEmpty ? _courseCodeController.text : null,
+      lecturerName: lecturerName,
       gracePeriodMinutes: int.parse(_gracePeriodController.text),
       requiredConnectionMinutes: int.parse(_connectionTimeController.text),
       maxAttendanceCount: int.parse(_maxAttendanceController.text),
+      durationMinutes: int.parse(_durationController.text),
     );
 
     if (mounted) {
@@ -156,6 +184,20 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
               ),
               const SizedBox(height: AppSpacing.lg),
 
+              // Lecturer Name
+              TextFormField(
+                controller: _lecturerNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Lecturer Name',
+                  hintText: 'e.g., Dr. John Smith',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
+                validator: (value) =>
+                    value?.trim().isEmpty ?? true ? 'Required' : null,
+              ),
+              const SizedBox(height: AppSpacing.md),
+
               // Course Name
               TextFormField(
                 controller: _courseNameController,
@@ -181,6 +223,26 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                 ),
                 validator: (value) =>
                     value?.isEmpty ?? true ? 'Required' : null,
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              // Session Duration
+              TextFormField(
+                controller: _durationController,
+                decoration: const InputDecoration(
+                  labelText: 'Session Duration (minutes)',
+                  hintText: 'How long the session stays open',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.hourglass_top),
+                  suffixText: 'min',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value?.isEmpty ?? true) return 'Required';
+                  if (int.tryParse(value!) == null) return 'Must be a number';
+                  if (int.parse(value) <= 0) return 'Must be greater than 0';
+                  return null;
+                },
               ),
               const SizedBox(height: AppSpacing.md),
 

@@ -13,6 +13,8 @@ class AttendanceSession {
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final int durationMinutes;
+  final String? lecturerName;
   final String? sessionPin;      // 6-digit PIN for printed poster method
   final String? sessionToken;    // opaque token for QR fallback
 
@@ -30,6 +32,8 @@ class AttendanceSession {
     required this.isActive,
     required this.createdAt,
     required this.updatedAt,
+    required this.durationMinutes,
+    this.lecturerName,
     this.sessionPin,
     this.sessionToken,
   });
@@ -48,6 +52,8 @@ class AttendanceSession {
         'isActive': isActive,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
+        'durationMinutes': durationMinutes,
+        'lecturerName': lecturerName,
         'sessionPin': sessionPin,
         'sessionToken': sessionToken,
       };
@@ -69,6 +75,8 @@ class AttendanceSession {
         isActive: json['isActive'] as bool,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
+        durationMinutes: json['durationMinutes'] as int? ?? 60,
+        lecturerName: json['lecturerName'] as String?,
         sessionPin: json['sessionPin'] as String?,
         sessionToken: json['sessionToken'] as String?,
       );
@@ -87,6 +95,8 @@ class AttendanceSession {
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
+    int? durationMinutes,
+    String? lecturerName,
     String? sessionPin,
     String? sessionToken,
   }) =>
@@ -105,6 +115,8 @@ class AttendanceSession {
         isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
+        durationMinutes: durationMinutes ?? this.durationMinutes,
+        lecturerName: lecturerName ?? this.lecturerName,
         sessionPin: sessionPin ?? this.sessionPin,
         sessionToken: sessionToken ?? this.sessionToken,
       );

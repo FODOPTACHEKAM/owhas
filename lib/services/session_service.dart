@@ -8,6 +8,7 @@ import '../models/attendance_record.dart';
 import '../models/student.dart';
 import 'storage_service.dart';
 import 'device_service.dart';
+import 'server_config.dart';
 
 /// Service for managing attendance sessions
 class SessionService {
@@ -20,9 +21,10 @@ class SessionService {
   final Uuid _uuid = const Uuid();
 
   Timer? _connectionTracker;
+  Timer? _autoEndTimer;
   final Map<String, DateTime> _studentJoinTimes = {};
 
-  static const String _serverBaseUrl = 'http://192.168.137.1:5501';
+  String get _serverBaseUrl => ServerConfig().baseUrl;
 
   /// Generate a 6-digit numeric PIN (100000 - 999999)
   String generateSessionPin() {
@@ -43,7 +45,9 @@ class SessionService {
     required String courseName,
     String? courseCode,
     required String lecturerId,
+    String? lecturerName,
     String? sessionToken,
+    required int durationMinutes,
   }) async {
     try {
       final response = await http.post(
@@ -54,7 +58,9 @@ class SessionService {
           'courseName': courseName,
           'courseCode': courseCode,
           'lecturerId': lecturerId,
+          'lecturerName': lecturerName,
           'sessionToken': sessionToken,
+          'durationMinutes': durationMinutes,
         }),
       ).timeout(const Duration(seconds: 10));
 
@@ -93,9 +99,11 @@ class SessionService {
     required String courseName,
     String? courseCode,
     required String lecturerId,
+    String? lecturerName,
     required int gracePeriodMinutes,
     required int requiredConnectionMinutes,
     required int maxAttendanceCount,
+    required int durationMinutes,
     int sessionNumber = 1,
   }) async {
     // End any existing active session
@@ -113,7 +121,9 @@ class SessionService {
       courseName: courseName,
       courseCode: courseCode,
       lecturerId: lecturerId,
+      lecturerName: lecturerName,
       sessionToken: token,
+      durationMinutes: durationMinutes,
     );
 
     final now = DateTime.now();
@@ -130,12 +140,22 @@ class SessionService {
       isActive: true,
       createdAt: now,
       updatedAt: now,
+      durationMinutes: durationMinutes,
+      lecturerName: lecturerName,
       sessionPin: pin,
       sessionToken: token,
     );
 
     await _storage.saveSession(session);
     _startConnectionTracking(session.id);
+
+    // Start auto-end timer
+    _autoEndTimer?.cancel();
+    _autoEndTimer = Timer(
+      Duration(minutes: durationMinutes),
+      () => endSession(session.id),
+    );
+
     return session;
   }
 
@@ -274,6 +294,7 @@ class SessionService {
     }
 
     _connectionTracker?.cancel();
+    _autoEndTimer?.cancel();
     _studentJoinTimes.clear();
   }
 
