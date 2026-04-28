@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import '../models/session.dart';
 import '../models/attendance_record.dart';
 import '../services/session_service.dart';
@@ -8,6 +9,7 @@ import '../services/pdf_service.dart';
 import '../services/api_service.dart';
 import '../services/file_service.dart';
 import '../services/network_discovery_service.dart';
+import '../services/signature_service.dart';
 
 /// Provider for attendance system state management
 class AttendanceProvider extends ChangeNotifier {
@@ -26,6 +28,7 @@ class AttendanceProvider extends ChangeNotifier {
   String? _error;
   int _activeWifiDevices = 0;
   List<String> _wifiDeviceIps = [];
+  int _sessionNumber = 1;
 
   AttendanceSession? get activeSession => _activeSession;
   List<AttendanceRecord> get currentRecords => _currentRecords;
@@ -35,6 +38,7 @@ class AttendanceProvider extends ChangeNotifier {
   String? get error => _error;
   int get activeWifiDevices => _activeWifiDevices;
   List<String> get wifiDeviceIps => _wifiDeviceIps;
+  int get sessionNumber => _sessionNumber;
 
   /// Initialize the provider
   Future<void> initialize() async {
@@ -58,6 +62,7 @@ class AttendanceProvider extends ChangeNotifier {
   /// Create a new session
   Future<void> createSession({
     required String courseName,
+    String? courseCode,
     required int gracePeriodMinutes,
     required int requiredConnectionMinutes,
     required int maxAttendanceCount,
@@ -69,23 +74,29 @@ class AttendanceProvider extends ChangeNotifier {
     try {
       _activeSession = await _sessionService.createSession(
         courseName: courseName,
+        courseCode: courseCode,
         lecturerId: 'lecturer_1', // In a real app, get from auth
         gracePeriodMinutes: gracePeriodMinutes,
         requiredConnectionMinutes: requiredConnectionMinutes,
         maxAttendanceCount: maxAttendanceCount,
+        sessionNumber: _sessionNumber,
       );
       _currentRecords = [];
       _error = null;
 
-      // Push session config to the Node server (best-effort; don't fail if offline)
+      // Reset server attendees and push new session config (best-effort; don't fail if offline)
       try {
+        await _apiService.resetServerSession(
+          courseName: courseName,
+          courseCode: courseCode,
+        );
         await _apiService.pushSessionConfig(
           requiredConnectionMinutes: requiredConnectionMinutes,
           gracePeriodMinutes: gracePeriodMinutes,
         );
       } catch (e) {
         // Server might be offline; session is still valid locally
-        debugPrint('Server config push failed (offline?): $e');
+        debugPrint('Server reset/config push failed (offline?): $e');
       }
     } catch (e) {
       _error = e.toString();
@@ -101,17 +112,29 @@ class AttendanceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final data = await _excelService.uploadPreviousSession();
-      if (data != null) {
+      // First check if server is reachable (for PDF parsing)
+      try {
+        await _apiService.pingServer();
+      } catch (e) {
+        _error = 'Server is not reachable. Ensure the Node.js server is running on your PC and your phone is connected to the same Wi-Fi/hotspot.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final result = await _excelService.uploadPreviousSession();
+      if (result != null) {
         _previousAttendance = {
-          for (var student in data) student.matricule: student.totalPresence
+          for (var student in result.students) student.matricule: student.totalPresence
         };
+        // Increment session number from previous PDF: new = old + 1
+        _sessionNumber = result.sessionNumber + 1;
         _error = null;
         _isLoading = false;
         notifyListeners();
         return true;
       }
-      _error = 'Failed to load previous session data';
+      _error = 'No file was selected or the file could not be read.';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -152,6 +175,37 @@ class AttendanceProvider extends ChangeNotifier {
         // Server might be offline; registration is still valid locally
         debugPrint('Server registration failed (offline?): $serverErr');
       }
+
+      await refreshRecords();
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Register a student manually (for discharged phones).
+  /// Bypasses device checks and marks as manual entry with no status.
+  Future<bool> registerManualStudent({
+    required String matricule,
+    required String studentName,
+    String? email,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await _sessionService.registerManualStudent(
+        matricule: matricule,
+        studentName: studentName,
+        email: email,
+      );
 
       await refreshRecords();
       _error = null;
@@ -236,6 +290,7 @@ class AttendanceProvider extends ChangeNotifier {
         verifiedAt: isVerified ? now : null,
         connectionDurationMinutes: durationMinutes,
         isVerified: isVerified,
+        isManual: false,
         deviceFingerprint: a['ip'] as String? ?? 'unknown',
         createdAt: joinedAt,
         updatedAt: now,
@@ -291,10 +346,17 @@ class AttendanceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Load saved signature and lecturer name if available
+      final signatureBytes = await SignatureService.loadSignature();
+      final lecturerName = await SignatureService.loadLecturerName();
+
       final pdfBytes = await PdfService.generateAttendancePDF(
         session: _activeSession!,
         records: _currentRecords,
         previousAttendance: _previousAttendance,
+        signatureBytes: signatureBytes,
+        lecturerName: lecturerName,
+        sessionNumber: _sessionNumber,
       );
 
       _isLoading = false;
@@ -315,8 +377,9 @@ class AttendanceProvider extends ChangeNotifier {
     if (pdfBytes == null) return false;
 
     try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(_activeSession!.startTime);
       final fileName =
-          'attendance_${_activeSession!.courseName.replaceAll(' ', '_')}_${_activeSession!.startTime.millisecondsSinceEpoch}.pdf';
+          '${_activeSession!.courseName.replaceAll(' ', '_')}_$dateStr.pdf';
       await _fileService.saveAndSharePdf(pdfBytes, fileName: fileName);
       return true;
     } catch (e) {
@@ -387,9 +450,42 @@ class AttendanceProvider extends ChangeNotifier {
     }
   }
 
+  /// Remove a student from the current session (both local and server)
+  Future<bool> removeStudent(String recordId) async {
+    if (_activeSession == null) return false;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final record = _currentRecords.firstWhere((r) => r.id == recordId);
+
+      // 1. Remove from local storage
+      await _sessionService.removeStudent(_activeSession!.id, recordId);
+
+      // 2. Remove from server (best-effort)
+      try {
+        await _apiService.removeAttendeeOnServer(record.matricule);
+      } catch (serverErr) {
+        debugPrint('Server removal failed (offline?): $serverErr');
+      }
+
+      // 3. Update local list
+      _currentRecords.removeWhere((r) => r.id == recordId);
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   void clearError() {
     _error = null;
     notifyListeners();
   }
 }
-

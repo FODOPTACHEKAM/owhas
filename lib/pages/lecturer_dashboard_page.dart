@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/attendance_provider.dart';
+import '../services/signature_service.dart';
 import '../theme.dart';
 
 class LecturerDashboardPage extends StatefulWidget {
@@ -14,6 +15,9 @@ class LecturerDashboardPage extends StatefulWidget {
 }
 
 class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
+  Offset _dragOffset = const Offset(0, 0);
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -30,18 +34,18 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
     });
   }
 
-  Future<void> _generatePDFReport() async {
+  Future<void> _downloadAndShareServerPdf() async {
     final provider = context.read<AttendanceProvider>();
     final success = await provider.generateAndSharePDFReport();
     if (mounted) {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('PDF generated and shared')),
+          const SnackBar(content: Text('PDF shared')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.error ?? 'Failed to generate PDF'),
+            content: Text(provider.error ?? 'Failed to share PDF'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -49,19 +53,134 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
     }
   }
 
-  Future<void> _downloadAndShareServerPdf() async {
-    final provider = context.read<AttendanceProvider>();
-    final success = await provider.downloadAndShareServerPdf();
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('PDF downloaded and shared')),
-        );
-      } else {
+  Future<void> _showAddManualStudentDialog() async {
+    final nameController = TextEditingController();
+    final matriculeController = TextEditingController();
+    final emailController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Student Manually'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'For students with discharged phones or no Wi-Fi access. They will appear in the report with no status.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Student Name *',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: matriculeController,
+                decoration: const InputDecoration(
+                  labelText: 'Matricule *',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.badge),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email (optional)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (nameController.text.trim().isEmpty ||
+                  matriculeController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Name and Matricule are required')),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      final provider = context.read<AttendanceProvider>();
+      final success = await provider.registerManualStudent(
+        matricule: matriculeController.text.trim(),
+        studentName: nameController.text.trim(),
+        email: emailController.text.trim().isEmpty
+            ? null
+            : emailController.text.trim(),
+      );
+
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Student added manually')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(provider.error ?? 'Failed to add student'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+
+    nameController.dispose();
+    matriculeController.dispose();
+    emailController.dispose();
+  }
+
+  Future<void> _confirmRemoveStudent(dynamic record) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Student?'),
+        content: Text('Are you sure you want to remove ${record.studentName} (${record.matricule}) from this session?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final provider = context.read<AttendanceProvider>();
+      final success = await provider.removeStudent(record.id as String);
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.error ?? 'Failed to download PDF'),
-            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text(success ? 'Student removed' : 'Failed to remove student'),
+            backgroundColor: success ? Colors.green : Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -146,141 +265,201 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
                   context.read<AttendanceProvider>().refreshRecords(),
             ),
             IconButton(
-              icon: const Icon(Icons.picture_as_pdf),
-              tooltip: 'Generate PDF Report',
-              onPressed: _generatePDFReport,
+              icon: const Icon(Icons.draw),
+              tooltip: 'Digital Signature',
+              onPressed: () => context.go('/signature'),
             ),
             IconButton(
               icon: const Icon(Icons.share),
-              tooltip: 'Download & Share Server PDF',
+              tooltip: 'Share PDF Report',
               onPressed: _downloadAndShareServerPdf,
             ),
-            IconButton(
+          IconButton(
               icon: const Icon(Icons.stop),
               onPressed: _endSession,
             ),
           ],
         ),
-        body: Consumer<AttendanceProvider>(
-          builder: (context, provider, _) {
-            final session = provider.activeSession;
-            if (session == null) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('No active session'),
-                    const SizedBox(height: AppSpacing.md),
-                    FilledButton(
-                      onPressed: () => context.go('/setup'),
-                      child: const Text('Create Session'),
+        body: Stack(
+          children: [
+            Consumer<AttendanceProvider>(
+              builder: (context, provider, _) {
+                final session = provider.activeSession;
+                if (session == null) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('No active session'),
+                        const SizedBox(height: AppSpacing.md),
+                        FilledButton(
+                          onPressed: () => context.go('/setup'),
+                          child: const Text('Create Session'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            }
+                  );
+                }
 
-            final stats = provider.getStats();
+                final stats = provider.getStats();
 
-            return SingleChildScrollView(
-              padding: AppSpacing.paddingMd,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _SessionInfoCard(session: session),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
+                return SingleChildScrollView(
+                  padding: AppSpacing.paddingMd,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Total',
-                          value: stats['total'].toString(),
-                          icon: Icons.people,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Verified',
-                          value: stats['verified'].toString(),
-                          icon: Icons.check_circle,
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Pending',
-                          value: stats['pending'].toString(),
-                          icon: Icons.pending,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Wi-Fi Devices',
-                          value: provider.activeWifiDevices.toString(),
-                          icon: Icons.wifi_tethering,
-                          color: Colors.blueAccent,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Coverage',
-                          value:
-                              '${provider.currentRecords.isEmpty ? 0 : ((provider.activeWifiDevices / provider.currentRecords.length) * 100).toStringAsFixed(0)}%',
-                          icon: Icons.signal_wifi_statusbar_4_bar,
-                          color: Colors.teal,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Card(
-                    child: Padding(
-                      padding: AppSpacing.paddingMd,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      _SessionInfoCard(session: session),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
                         children: [
-                          Text(
-                            'Real-Time Attendance Heatmap',
-                            style: context.textStyles.titleLarge?.semiBold,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          if (provider.currentRecords.isEmpty)
-                            const Padding(
-                              padding: AppSpacing.paddingLg,
-                              child: Center(
-                                child: Text('No students registered yet'),
-                              ),
-                            )
-                          else
-                            ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: provider.currentRecords.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: AppSpacing.sm),
-                              itemBuilder: (context, index) {
-                                final record = provider.currentRecords[index];
-                                return _AttendanceRecordTile(record: record);
-                              },
+                          Expanded(
+                            child: _StatCard(
+                              title: 'Total',
+                              value: stats['total'].toString(),
+                              icon: Icons.people,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: _StatCard(
+                              title: 'Verified',
+                              value: stats['verified'].toString(),
+                              icon: Icons.check_circle,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: _StatCard(
+                              title: 'Pending',
+                              value: stats['pending'].toString(),
+                              icon: Icons.pending,
+                              color: Colors.orange,
+                            ),
+                          ),
                         ],
                       ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              title: 'Wi-Fi Devices',
+                              value: provider.activeWifiDevices.toString(),
+                              icon: Icons.wifi_tethering,
+                              color: Colors.blueAccent,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: _StatCard(
+                              title: 'Coverage',
+                              value: () {
+                                final total = stats['total'] ?? 0;
+                                final verified = stats['verified'] ?? 0;
+                                if (total == 0) return '0%';
+                                return '${((verified / total) * 100).toStringAsFixed(0)}%';
+                              }(),
+                              icon: Icons.signal_wifi_statusbar_4_bar,
+                              color: Colors.teal,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Card(
+                        child: Padding(
+                          padding: AppSpacing.paddingMd,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Real-Time Attendance Heatmap',
+                                style: context.textStyles.titleLarge?.semiBold,
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              TextField(
+                                onChanged: (value) {
+                                  setState(() {
+                                    _searchQuery = value.trim().toLowerCase();
+                                  });
+                                },
+                                decoration: InputDecoration(
+                                  hintText: 'Search by name or matricule...',
+                                  prefixIcon: const Icon(Icons.search),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              Builder(
+                                builder: (context) {
+                                  final filteredRecords = provider.currentRecords.where((r) {
+                                    if (_searchQuery.isEmpty) return true;
+                                    return r.studentName.toLowerCase().contains(_searchQuery) ||
+                                        r.matricule.toLowerCase().contains(_searchQuery);
+                                  }).toList();
+
+                                  if (filteredRecords.isEmpty) {
+                                    return const Padding(
+                                      padding: AppSpacing.paddingLg,
+                                      child: Center(
+                                        child: Text('No students found'),
+                                      ),
+                                    );
+                                  }
+
+                                  return ListView.separated(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: filteredRecords.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: AppSpacing.sm),
+                                    itemBuilder: (context, index) {
+                                      final record = filteredRecords[index];
+                                      return _AttendanceRecordTile(
+                                        record: record,
+                                        onRemove: () => _confirmRemoveStudent(record),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final maxX = constraints.maxWidth - 72; // FAB width + padding
+                final maxY = constraints.maxHeight - 72;
+                return Positioned(
+                  left: (16 + _dragOffset.dx).clamp(0.0, maxX),
+                  top: (constraints.maxHeight - 72 - _dragOffset.dy).clamp(0.0, maxY),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _dragOffset += Offset(details.delta.dx, -details.delta.dy);
+                      });
+                    },
+                    child: FloatingActionButton.small(
+                      onPressed: _showAddManualStudentDialog,
+                      tooltip: 'Add Student',
+                      child: const Icon(Icons.person_add),
                     ),
                   ),
-                ],
-              ),
-            );
-          },
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -315,6 +494,15 @@ class _SessionInfoCard extends StatelessWidget {
                         session.courseName,
                         style: context.textStyles.headlineSmall?.bold,
                       ),
+                      if (session.courseCode != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          session.courseCode!,
+                          style: context.textStyles.bodyMedium?.withColor(
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         'Started: ${DateFormat('HH:mm').format(session.startTime)}',
@@ -328,6 +516,23 @@ class _SessionInfoCard extends StatelessWidget {
                         style: context.textStyles.bodySmall?.withColor(
                           Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
+                      ),
+                      FutureBuilder<String?>(
+                        future: SignatureService.loadLecturerName(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasData && snapshot.data != null) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: AppSpacing.xs),
+                              child: Text(
+                                'Lecturer: ${snapshot.data}',
+                                style: context.textStyles.bodySmall?.withColor(
+                                  Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
                     ],
                   ),
@@ -408,12 +613,25 @@ class _StatCard extends StatelessWidget {
 
 class _AttendanceRecordTile extends StatelessWidget {
   final dynamic record;
-  const _AttendanceRecordTile({required this.record});
+  final VoidCallback? onRemove;
+  const _AttendanceRecordTile({required this.record, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
     final isVerified = record.isVerified;
-    final statusColor = isVerified ? Colors.green : Colors.orange;
+    final isManual = record.isManual as bool? ?? false;
+
+    final statusColor = isManual
+        ? Colors.grey
+        : isVerified
+            ? Colors.green
+            : Colors.orange;
+
+    final statusIcon = isManual
+        ? Icons.person_outline
+        : isVerified
+            ? Icons.check_circle
+            : Icons.pending;
 
     return Container(
       padding: AppSpacing.paddingSm,
@@ -425,7 +643,7 @@ class _AttendanceRecordTile extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            isVerified ? Icons.check_circle : Icons.pending,
+            statusIcon,
             color: statusColor,
             size: 20,
           ),
@@ -444,6 +662,13 @@ class _AttendanceRecordTile extends StatelessWidget {
                     Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (isManual)
+                  Text(
+                    'Manual entry',
+                    style: context.textStyles.labelSmall?.withColor(
+                      Colors.grey,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -462,6 +687,16 @@ class _AttendanceRecordTile extends StatelessWidget {
               ),
             ],
           ),
+          if (onRemove != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            IconButton(
+              icon: const Icon(Icons.person_remove, color: Colors.red),
+              tooltip: 'Remove student',
+              onPressed: onRemove,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
         ],
       ),
     );

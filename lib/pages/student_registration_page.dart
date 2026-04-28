@@ -117,182 +117,196 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // Animated gradient background
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Theme.of(context).colorScheme.primary,
-                  Theme.of(context).colorScheme.secondary,
-                  Theme.of(context).colorScheme.tertiary,
-                ],
-              ),
-            ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.primary,
+              Theme.of(context).colorScheme.secondary,
+              Theme.of(context).colorScheme.tertiary,
+            ],
           ),
-
-          // Back button
-          SafeArea(
-            child: Padding(
-              padding: AppSpacing.paddingMd,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => context.go('/'),
-                tooltip: 'Back to Home',
+        ),
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Back button row
+              Padding(
+                padding: AppSpacing.paddingMd,
+                child: GestureDetector(
+                  onTap: () => context.go('/'),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // Glassmorphic form
-          Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: SingleChildScrollView(
-                  padding: AppSpacing.paddingLg,
-                  child: _GlassmorphicCard(
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Header
-                          Icon(
-                            Icons.how_to_reg,
-                            size: 64,
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          Text(
-                            'Attendance Registration',
-                            style: context.textStyles.headlineMedium?.bold.withColor(
-                              Colors.white,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            'Stay connected for verification',
-                            style: context.textStyles.bodyMedium?.withColor(
-                              Colors.white.withValues(alpha: 0.8),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-
-                          // Matricule field
-                          _GlassTextField(
-                            controller: _matriculeController,
-                            label: 'Matricule',
-                            icon: Icons.badge,
-                            validator: (value) =>
-                                value?.isEmpty ?? true ? 'Required' : null,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-
-                          // Name field
-                          _GlassTextField(
-                            controller: _nameController,
-                            label: 'Full Name',
-                            icon: Icons.person,
-                            validator: (value) =>
-                                value?.isEmpty ?? true ? 'Required' : null,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-
-                          // Email field
-                          _GlassTextField(
-                            controller: _emailController,
-                            label: 'Email Address',
-                            icon: Icons.email,
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Email is required';
-                              }
-                              final emailRegex = RegExp(
-                                r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                              );
-                              if (!emailRegex.hasMatch(value)) {
-                                return 'Enter a valid email';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-
-                          // Register button
-                          Consumer<AttendanceProvider>(
-                            builder: (context, provider, _) {
-                              return ElevatedButton(
-                                onPressed: provider.isLoading ? null : _register,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  padding: AppSpacing.verticalMd,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                  ),
-                                ),
-                                child: provider.isLoading
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : Text(
-                                        'Register Attendance',
-                                        style: context.textStyles.titleMedium?.semiBold,
-                                      ),
-                              );
-                            },
-                          ),
-
-                          // Info text
-                          const SizedBox(height: AppSpacing.lg),
-                          Container(
-                            padding: AppSpacing.paddingSm,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                            ),
-                            child: Row(
+              // Scrollable form
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: SingleChildScrollView(
+                      padding: AppSpacing.paddingLg,
+                      child: Center(
+                        child: _GlassmorphicCard(
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                // Header
                                 Icon(
-                                  Icons.info_outline,
-                                  size: 16,
-                                  color: Colors.white.withValues(alpha: 0.8),
+                                  Icons.how_to_reg,
+                                  size: 64,
+                                  color: Colors.white.withValues(alpha: 0.9),
                                 ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Expanded(
-                                  child: Text(
-                                    'Keep your device connected to verify attendance',
-                                    style: context.textStyles.bodySmall?.withColor(
-                                      Colors.white.withValues(alpha: 0.8),
-                                    ),
+                                const SizedBox(height: AppSpacing.md),
+                                Text(
+                                  'Attendance Registration',
+                                  style: context.textStyles.headlineMedium?.bold.withColor(
+                                    Colors.white,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: AppSpacing.xs),
+                                Text(
+                                  'Stay connected for verification',
+                                  style: context.textStyles.bodyMedium?.withColor(
+                                    Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: AppSpacing.xl),
+
+                                // Matricule field
+                                _GlassTextField(
+                                  controller: _matriculeController,
+                                  label: 'Matricule',
+                                  icon: Icons.badge,
+                                  validator: (value) =>
+                                      value?.isEmpty ?? true ? 'Required' : null,
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+
+                                // Name field
+                                _GlassTextField(
+                                  controller: _nameController,
+                                  label: 'Full Name',
+                                  icon: Icons.person,
+                                  validator: (value) =>
+                                      value?.isEmpty ?? true ? 'Required' : null,
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+
+                                // Email field
+                                _GlassTextField(
+                                  controller: _emailController,
+                                  label: 'Email Address',
+                                  icon: Icons.email,
+                                  keyboardType: TextInputType.emailAddress,
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Email is required';
+                                    }
+                                    final emailRegex = RegExp(
+                                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                    );
+                                    if (!emailRegex.hasMatch(value)) {
+                                      return 'Enter a valid email';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: AppSpacing.xl),
+
+                                // Register button
+                                Consumer<AttendanceProvider>(
+                                  builder: (context, provider, _) {
+                                    return ElevatedButton(
+                                      onPressed: provider.isLoading ? null : _register,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor:
+                                            Theme.of(context).colorScheme.primary,
+                                        padding: AppSpacing.verticalMd,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(AppRadius.md),
+                                        ),
+                                      ),
+                                      child: provider.isLoading
+                                          ? const SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : Text(
+                                              'Register Attendance',
+                                              style: context.textStyles.titleMedium?.semiBold,
+                                            ),
+                                    );
+                                  },
+                                ),
+
+                                // Info text
+                                const SizedBox(height: AppSpacing.lg),
+                                Container(
+                                  padding: AppSpacing.paddingSm,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: Colors.white.withValues(alpha: 0.8),
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Expanded(
+                                        child: Text(
+                                          'Keep your device connected to verify attendance',
+                                          style: context.textStyles.bodySmall?.withColor(
+                                            Colors.white.withValues(alpha: 0.8),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'pages/home_page.dart';
 import 'pages/session_setup_page.dart';
 import 'pages/lecturer_dashboard_page.dart';
 import 'pages/student_registration_page.dart';
+import 'pages/signature_setup_page.dart';
 
 /// GoRouter configuration for app navigation
 class AppRouter {
@@ -37,6 +38,13 @@ class AppRouter {
           child: StudentRegistrationPage(),
         ),
       ),
+      GoRoute(
+        path: AppRoutes.signature,
+        name: 'signature',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: SignatureSetupPage(),
+        ),
+      ),
     ],
   );
 }
@@ -47,4 +55,5 @@ class AppRoutes {
   static const String setup = '/setup';
   static const String dashboard = '/dashboard';
   static const String register = '/register';
+  static const String signature = '/signature';
 }

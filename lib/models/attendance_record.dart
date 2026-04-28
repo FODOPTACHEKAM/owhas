@@ -10,6 +10,7 @@ class AttendanceRecord {
   final DateTime? verifiedAt;
   final int connectionDurationMinutes;
   final bool isVerified;
+  final bool isManual;
   final String deviceFingerprint;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -25,6 +26,7 @@ class AttendanceRecord {
     this.verifiedAt,
     required this.connectionDurationMinutes,
     required this.isVerified,
+    this.isManual = false,
     required this.deviceFingerprint,
     required this.createdAt,
     required this.updatedAt,
@@ -41,6 +43,7 @@ class AttendanceRecord {
         'verifiedAt': verifiedAt?.toIso8601String(),
         'connectionDurationMinutes': connectionDurationMinutes,
         'isVerified': isVerified,
+        'isManual': isManual,
         'deviceFingerprint': deviceFingerprint,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
@@ -60,6 +63,7 @@ class AttendanceRecord {
             : null,
         connectionDurationMinutes: json['connectionDurationMinutes'] as int,
         isVerified: json['isVerified'] as bool,
+        isManual: json['isManual'] as bool? ?? false,
         deviceFingerprint: json['deviceFingerprint'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -76,6 +80,7 @@ class AttendanceRecord {
     DateTime? verifiedAt,
     int? connectionDurationMinutes,
     bool? isVerified,
+    bool? isManual,
     String? deviceFingerprint,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -92,8 +97,10 @@ class AttendanceRecord {
         connectionDurationMinutes:
             connectionDurationMinutes ?? this.connectionDurationMinutes,
         isVerified: isVerified ?? this.isVerified,
+        isManual: isManual ?? this.isManual,
         deviceFingerprint: deviceFingerprint ?? this.deviceFingerprint,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
 }
+

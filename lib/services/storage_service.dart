@@ -81,6 +81,16 @@ class StorageService {
     }
   }
 
+  Future<void> deleteAttendanceRecord(String sessionId, String recordId) async {
+    await init();
+    final records = await getAttendanceRecords(sessionId);
+    records.removeWhere((r) => r.id == recordId);
+    await _prefs!.setString(
+      'attendance_$sessionId',
+      jsonEncode(records.map((r) => r.toJson()).toList()),
+    );
+  }
+
   // Student storage
   Future<void> saveStudent(Student student) async {
     await init();
@@ -116,6 +126,17 @@ class StorageService {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Delete a student by their unique ID
+  Future<void> deleteStudent(String studentId) async {
+    await init();
+    final students = await getStudents();
+    students.removeWhere((s) => s.id == studentId);
+    await _prefs!.setString(
+      'students',
+      jsonEncode(students.map((s) => s.toJson()).toList()),
+    );
   }
 
   // Clear all data

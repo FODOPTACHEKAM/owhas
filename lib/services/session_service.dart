@@ -22,10 +22,12 @@ class SessionService {
   /// Create a new session
   Future<AttendanceSession> createSession({
     required String courseName,
+    String? courseCode,
     required String lecturerId,
     required int gracePeriodMinutes,
     required int requiredConnectionMinutes,
     required int maxAttendanceCount,
+    int sessionNumber = 1,
   }) async {
     // End any existing active session
     final activeSession = await _storage.getActiveSession();
@@ -37,11 +39,13 @@ class SessionService {
     final session = AttendanceSession(
       id: _uuid.v4(),
       courseName: courseName,
+      courseCode: courseCode,
       lecturerId: lecturerId,
       startTime: now,
       gracePeriodMinutes: gracePeriodMinutes,
       requiredConnectionMinutes: requiredConnectionMinutes,
       maxAttendanceCount: maxAttendanceCount,
+      sessionNumber: sessionNumber,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -116,6 +120,57 @@ class SessionService {
     return record;
   }
 
+  /// Register a student manually (for discharged phones).
+  /// Bypasses device fingerprint checks and marks as manual entry.
+  Future<AttendanceRecord?> registerManualStudent({
+    required String matricule,
+    required String studentName,
+    String? email,
+  }) async {
+    final session = await _storage.getActiveSession();
+    if (session == null) {
+      throw Exception('No active session');
+    }
+
+    Student? student = await _storage.getStudentByMatricule(matricule);
+    if (student == null) {
+      student = Student(
+        id: _uuid.v4(),
+        matricule: matricule,
+        name: studentName,
+        email: email,
+        deviceFingerprint: 'manual_${_uuid.v4()}',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await _storage.saveStudent(student);
+    } else if (email != null && student.email != email) {
+      student = student.copyWith(email: email, updatedAt: DateTime.now());
+      await _storage.saveStudent(student);
+    }
+
+    final now = DateTime.now();
+    final record = AttendanceRecord(
+      id: _uuid.v4(),
+      sessionId: session.id,
+      studentId: student.id,
+      matricule: matricule,
+      studentName: studentName,
+      email: email,
+      joinedAt: now,
+      connectionDurationMinutes: 0,
+      isVerified: false,
+      isManual: true,
+      deviceFingerprint: 'manual_${_uuid.v4()}',
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    await _storage.saveAttendanceRecord(record);
+
+    return record;
+  }
+
   /// End a session
   Future<void> endSession(String sessionId) async {
     final sessions = await _storage.getSessions();
@@ -185,5 +240,25 @@ class SessionService {
       'verified': verified,
       'pending': pending,
     };
+  }
+
+  /// Remove a student from the session by record ID.
+  /// Also deletes the associated student entity and cleans up join-time tracking.
+  Future<void> removeStudent(String sessionId, String recordId) async {
+    // 1. Fetch the record to obtain the linked student ID
+    final records = await _storage.getAttendanceRecords(sessionId);
+    final record = records.firstWhere(
+      (r) => r.id == recordId,
+      orElse: () => throw Exception('Attendance record not found'),
+    );
+
+    // 2. Delete the attendance record
+    await _storage.deleteAttendanceRecord(sessionId, recordId);
+
+    // 3. Delete the student entity completely
+    await _storage.deleteStudent(record.studentId);
+
+    // 4. Clean up in-memory join-time tracking
+    _studentJoinTimes.remove(recordId);
   }
 }

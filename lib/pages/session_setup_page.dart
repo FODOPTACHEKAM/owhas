@@ -15,6 +15,7 @@ class SessionSetupPage extends StatefulWidget {
 class _SessionSetupPageState extends State<SessionSetupPage> {
   final _formKey = GlobalKey<FormState>();
   final _courseNameController = TextEditingController();
+  final _courseCodeController = TextEditingController();
   final _gracePeriodController = TextEditingController(text: '5');
   final _connectionTimeController = TextEditingController(text: '15');
   final _maxAttendanceController = TextEditingController(text: '30');
@@ -24,6 +25,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
   @override
   void dispose() {
     _courseNameController.dispose();
+    _courseCodeController.dispose();
     _gracePeriodController.dispose();
     _connectionTimeController.dispose();
     _maxAttendanceController.dispose();
@@ -61,6 +63,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
     
     await provider.createSession(
       courseName: _courseNameController.text,
+      courseCode: _courseCodeController.text.isNotEmpty ? _courseCodeController.text : null,
       gracePeriodMinutes: int.parse(_gracePeriodController.text),
       requiredConnectionMinutes: int.parse(_connectionTimeController.text),
       maxAttendanceCount: int.parse(_maxAttendanceController.text),
@@ -137,7 +140,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'Load previous attendance data to maintain cumulative totals. The system will automatically map existing student records.',
+                        'Load previous attendance data to maintain cumulative totals. The system supports Excel (.xlsx, .xls) and PDF (.pdf) files, and will automatically map existing student records.',
                         style: context.textStyles.bodySmall?.withColor(
                           Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -145,7 +148,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                       const SizedBox(height: AppSpacing.md),
                       FilledButton.tonal(
                         onPressed: _uploadPreviousSession,
-                        child: const Text('Choose Excel File'),
+                        child: const Text('Choose File (Excel or PDF)'),
                       ),
                     ],
                   ),
@@ -161,6 +164,20 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                   hintText: 'e.g., Computer Science 101',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.book),
+                ),
+                validator: (value) =>
+                    value?.isEmpty ?? true ? 'Required' : null,
+              ),
+              const SizedBox(height: AppSpacing.md),
+
+              // Course Code
+              TextFormField(
+                controller: _courseCodeController,
+                decoration: const InputDecoration(
+                  labelText: 'Course Code',
+                  hintText: 'e.g., CS101',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.code),
                 ),
                 validator: (value) =>
                     value?.isEmpty ?? true ? 'Required' : null,
