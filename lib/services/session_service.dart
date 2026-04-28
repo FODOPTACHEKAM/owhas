@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import '../models/session.dart';
 import '../models/attendance_record.dart';
@@ -19,6 +22,72 @@ class SessionService {
   Timer? _connectionTracker;
   final Map<String, DateTime> _studentJoinTimes = {};
 
+  static const String _serverBaseUrl = 'http://192.168.137.1:5501';
+
+  /// Generate a 6-digit numeric PIN (100000 - 999999)
+  String generateSessionPin() {
+    final random = Random.secure();
+    return (100000 + random.nextInt(900000)).toString();
+  }
+
+  /// Generate a secure opaque session token for QR fallback
+  String generateSessionToken() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    return base64Url.encode(bytes);
+  }
+
+  /// Initialize the session on the Node.js server with PIN
+  Future<void> _initServerSession({
+    required String pin,
+    required String courseName,
+    String? courseCode,
+    required String lecturerId,
+    String? sessionToken,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_serverBaseUrl/api/session-init'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pin': pin,
+          'courseName': courseName,
+          'courseCode': courseCode,
+          'lecturerId': lecturerId,
+          'sessionToken': sessionToken,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('[SessionService] Server session initialized with PIN $pin');
+      } else if (response.statusCode == 409) {
+        throw Exception('PIN already in use by another active session. Try again.');
+      } else {
+        throw Exception('Server responded with status ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to initialize server session: $e');
+    }
+  }
+
+  /// End the session on the Node.js server (deactivates PIN)
+  Future<void> _endServerSession(String pin) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_serverBaseUrl/api/end-session'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pin': pin}),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('[SessionService] Server session ended: ${data['message']}');
+      }
+    } catch (e) {
+      print('[SessionService] Failed to end server session (offline?): $e');
+    }
+  }
+
   /// Create a new session
   Future<AttendanceSession> createSession({
     required String courseName,
@@ -35,6 +104,18 @@ class SessionService {
       await endSession(activeSession.id);
     }
 
+    final pin = generateSessionPin();
+    final token = generateSessionToken();
+
+    // Initialize on server first (fails fast if PIN collision or server down)
+    await _initServerSession(
+      pin: pin,
+      courseName: courseName,
+      courseCode: courseCode,
+      lecturerId: lecturerId,
+      sessionToken: token,
+    );
+
     final now = DateTime.now();
     final session = AttendanceSession(
       id: _uuid.v4(),
@@ -49,6 +130,8 @@ class SessionService {
       isActive: true,
       createdAt: now,
       updatedAt: now,
+      sessionPin: pin,
+      sessionToken: token,
     );
 
     await _storage.saveSession(session);
@@ -69,13 +152,13 @@ class SessionService {
 
     // Get or create student
     final deviceFingerprint = await _deviceService.getDeviceFingerprint();
-    
+
     // Check for device reuse
     final existingRecords = await _storage.getAttendanceRecords(session.id);
     final deviceAlreadyUsed = existingRecords.any(
       (r) => r.deviceFingerprint == deviceFingerprint,
     );
-    
+
     if (deviceAlreadyUsed) {
       throw Exception('This device has already been used for registration');
     }
@@ -175,7 +258,7 @@ class SessionService {
   Future<void> endSession(String sessionId) async {
     final sessions = await _storage.getSessions();
     final session = sessions.where((s) => s.id == sessionId).firstOrNull;
-    
+
     if (session != null) {
       final updatedSession = session.copyWith(
         isActive: false,
@@ -183,6 +266,11 @@ class SessionService {
         updatedAt: DateTime.now(),
       );
       await _storage.saveSession(updatedSession);
+
+      // Deactivate PIN on server
+      if (session.sessionPin != null) {
+        await _endServerSession(session.sessionPin!);
+      }
     }
 
     _connectionTracker?.cancel();
@@ -202,7 +290,7 @@ class SessionService {
   Future<void> _updateConnectionDurations(String sessionId) async {
     final session = await _storage.getSessions();
     final currentSession = session.where((s) => s.id == sessionId).firstOrNull;
-    
+
     if (currentSession == null || !currentSession.isActive) {
       _connectionTracker?.cancel();
       return;
@@ -262,3 +350,4 @@ class SessionService {
     _studentJoinTimes.remove(recordId);
   }
 }
+

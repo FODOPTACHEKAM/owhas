@@ -13,6 +13,8 @@ class AttendanceSession {
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? sessionPin;      // 6-digit PIN for printed poster method
+  final String? sessionToken;    // opaque token for QR fallback
 
   AttendanceSession({
     required this.id,
@@ -28,6 +30,8 @@ class AttendanceSession {
     required this.isActive,
     required this.createdAt,
     required this.updatedAt,
+    this.sessionPin,
+    this.sessionToken,
   });
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +48,8 @@ class AttendanceSession {
         'isActive': isActive,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
+        'sessionPin': sessionPin,
+        'sessionToken': sessionToken,
       };
 
   factory AttendanceSession.fromJson(Map<String, dynamic> json) =>
@@ -63,6 +69,8 @@ class AttendanceSession {
         isActive: json['isActive'] as bool,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
+        sessionPin: json['sessionPin'] as String?,
+        sessionToken: json['sessionToken'] as String?,
       );
 
   AttendanceSession copyWith({
@@ -79,6 +87,8 @@ class AttendanceSession {
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? sessionPin,
+    String? sessionToken,
   }) =>
       AttendanceSession(
         id: id ?? this.id,
@@ -95,5 +105,7 @@ class AttendanceSession {
         isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
+        sessionPin: sessionPin ?? this.sessionPin,
+        sessionToken: sessionToken ?? this.sessionToken,
       );
 }

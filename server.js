@@ -51,23 +51,97 @@ app.get('/ping', (req, res) => {
 
 // Version check endpoint to verify server is the updated version
 app.get('/api/version', (req, res) => {
-    res.json({ version: '2.0', features: ['pdf-parse', 'session-number', 'tp-table'] });
+    res.json({ version: '3.0', features: ['pdf-parse', 'session-number', 'tp-table', 'pin-sessions'] });
 });
 
-// ====== In-memory storage ======
-let attendees = [];
-let sessionInfo = {
-  courseName: 'Untitled Course',
-  courseCode: null,
+// ====== In-memory PIN-scoped session storage ======
+// pin -> { courseName, courseCode, lecturerId, attendees[], createdAt, expiresAt }
+const activeSessions = new Map();
+
+// Session config defaults
+let sessionConfig = {
+    requiredConnectionMinutes: 15,
+    gracePeriodMinutes: 5,
 };
 
-let sessionConfig = {
-  requiredConnectionMinutes: 15,
-  gracePeriodMinutes: 5,
-};
+// ====== Helper: get session by PIN or token ======
+function getSessionByPin(pin) {
+    if (!pin) return null;
+    const session = activeSessions.get(pin);
+    if (!session) return null;
+    if (new Date() > new Date(session.expiresAt)) {
+        activeSessions.delete(pin);
+        return null;
+    }
+    return session;
+}
 
 // ====== Multer setup for PDF uploads ======
 const upload = multer({ storage: multer.memoryStorage() });
+
+// ====== POST /api/session-init - Initialize a new PIN-scoped session ======
+app.post('/api/session-init', (req, res) => {
+    const { courseName, courseCode, lecturerId, pin, sessionToken } = req.body;
+
+    if (!pin || !/^\d{6}$/.test(pin)) {
+        return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    }
+
+    if (activeSessions.has(pin)) {
+        return res.status(409).json({ error: 'PIN already in use by an active session' });
+    }
+
+    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours
+    activeSessions.set(pin, {
+        courseName: courseName || 'Untitled Course',
+        courseCode: courseCode || null,
+        lecturerId: lecturerId || 'unknown',
+        sessionToken: sessionToken || null,
+        attendees: [],
+        createdAt: new Date(),
+        expiresAt: expiresAt,
+    });
+
+    console.log(`[SESSION-INIT] PIN ${pin} activated for ${courseName || 'Untitled Course'} (expires ${expiresAt.toISOString()})`);
+    res.json({ success: true, pin, message: 'Session activated with PIN ' + pin });
+});
+
+// ====== POST /api/validate-pin - Student validates PIN before registering ======
+app.post('/api/validate-pin', (req, res) => {
+    const { pin } = req.body;
+    const session = getSessionByPin(pin);
+
+    if (!session) {
+        return res.status(404).json({ error: 'Invalid or expired PIN' });
+    }
+
+    res.json({
+        valid: true,
+        courseName: session.courseName,
+        courseCode: session.courseCode,
+        lecturerId: session.lecturerId,
+    });
+});
+
+// ====== POST /api/end-session - Deactivate a session and free its PIN ======
+app.post('/api/end-session', (req, res) => {
+    const { pin } = req.body;
+    const session = getSessionByPin(pin);
+
+    if (!session) {
+        return res.status(404).json({ error: 'Session not found or already expired' });
+    }
+
+    const attendeeCount = session.attendees.length;
+    activeSessions.delete(pin);
+
+    console.log(`[SESSION-END] PIN ${pin} deactivated. ${attendeeCount} attendee(s) recorded.`);
+    res.json({
+        success: true,
+        message: `Session ended. ${attendeeCount} attendee(s) recorded.`,
+        attendeeCount,
+    });
+});
 
 // ====== POST /api/parse-pdf - Parse previous session PDF ======
 app.post('/api/parse-pdf', upload.single('pdf'), async (req, res) => {
@@ -281,12 +355,12 @@ function parseMasterRosterLine(line) {
     return { matricule, name, totalPresence };
 }
 
-// ====== POST /connect - Student Registration ======
+// ====== POST /connect - Student Registration (PIN-scoped) ======
 app.post('/connect', (req, res) => {
     console.log('[POST /connect] Raw body:', req.body);
     console.log('[POST /connect] Content-Type:', req.headers['content-type']);
-    
-    const { username, matricule, email } = req.body;
+
+    const { username, matricule, email, sessionPin, sessionToken } = req.body;
     const studentIP = req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress;
 
     // Validation Check
@@ -295,16 +369,44 @@ app.post('/connect', (req, res) => {
         return res.status(400).send("All fields are required.");
     }
 
-    // Duplicate Check
-    const existingEntry = attendees.find(a => a.ip === studentIP);
-    if (existingEntry) {
-        if (existingEntry.username !== username || existingEntry.matricule !== matricule) {
-            return res.status(403).send("Error: This device is already registered under a different name.");
+    // Determine which session this registration belongs to
+    let session = null;
+    let pin = sessionPin;
+
+    if (pin && /^\d{6}$/.test(pin)) {
+        session = getSessionByPin(pin);
+    } else if (sessionToken) {
+        // Fallback: find session by token
+        for (const [p, s] of activeSessions.entries()) {
+            if (s.sessionToken === sessionToken) {
+                session = s;
+                pin = p;
+                break;
+            }
         }
-        return res.status(200).send("You are already registered!");
     }
 
-    // Save Data
+    // Backward compatibility: if no PIN provided and only one active session exists, use it
+    if (!session && activeSessions.size === 1) {
+        const entry = Array.from(activeSessions.entries())[0];
+        session = entry[1];
+        pin = entry[0];
+    }
+
+    if (!session) {
+        return res.status(400).send("A valid Session PIN is required. Ask your lecturer for the current PIN.");
+    }
+
+    // Session-scoped Duplicate Check
+    const existingEntry = session.attendees.find(a => a.ip === studentIP);
+    if (existingEntry) {
+        if (existingEntry.username !== username || existingEntry.matricule !== matricule) {
+            return res.status(403).send("Error: This device is already registered under a different name in this session.");
+        }
+        return res.status(200).send("You are already registered for this session!");
+    }
+
+    // Save Data in session-scoped array
     const newAttendee = {
         username,
         matricule,
@@ -314,11 +416,11 @@ app.post('/connect', (req, res) => {
         time: new Date().toLocaleString()
     };
 
-    attendees.push(newAttendee);
-    console.log(`[SUCCESS] Registered: ${username} (${matricule}) from ${studentIP}`);
-    console.log(`[TOTAL] ${attendees.length} attendee(s) registered`);
-    
-    res.status(200).send("Successfully Registered!");
+    session.attendees.push(newAttendee);
+    console.log(`[SUCCESS] Registered: ${username} (${matricule}) from ${studentIP} into session PIN ${pin}`);
+    console.log(`[TOTAL] Session ${pin}: ${session.attendees.length} attendee(s) registered`);
+
+    res.status(200).send(`Successfully registered for ${session.courseName}!`);
 });
 
 // ====== Also accept GET /connect for testing ======
@@ -326,15 +428,24 @@ app.get('/connect', (req, res) => {
     res.status(200).send("Connect endpoint is working. Use POST to register.");
 });
 
-// ====== Export PDF ======
+// ====== Export PDF (scoped by PIN) ======
 app.get('/export', (req, res) => {
-    if (attendees.length === 0) return res.send("No attendees yet.");
+    const pin = req.query.pin;
+    const session = getSessionByPin(pin);
+
+    if (!session) {
+        return res.status(404).send("Session not found. Provide a valid PIN via ?pin=");
+    }
+
+    if (session.attendees.length === 0) return res.send("No attendees for this session yet.");
+
     res.setHeader('Content-Type', 'application/pdf');
     const pdfSessionInfo = {
-        ...sessionInfo,
+        courseName: session.courseName,
+        courseCode: session.courseCode,
         requiredConnectionMinutes: sessionConfig.requiredConnectionMinutes,
     };
-    generateAttendancePDF(attendees, res, pdfSessionInfo);
+    generateAttendancePDF(session.attendees, res, pdfSessionInfo);
 });
 
 // ====== API Endpoints ======
@@ -350,31 +461,66 @@ app.post('/api/session-config', express.json(), (req, res) => {
 });
 
 app.get('/api/attendees', (req, res) => {
-    res.json({ attendees });
+    const pin = req.query.pin;
+    const session = getSessionByPin(pin);
+
+    if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+    }
+
+    res.json({ attendees: session.attendees });
 });
 
-// ====== Reset attendees (called when lecturer starts a new session) ======
+// ====== Reset attendees (scoped by PIN; creates new session if PIN doesn't exist) ======
 app.post('/api/reset', (req, res) => {
-    const previousCount = attendees.length;
-    attendees = [];
-    
-    // Update session info if provided
-    const { courseName, courseCode } = req.body;
-    if (courseName) sessionInfo.courseName = courseName;
-    if (courseCode !== undefined) sessionInfo.courseCode = courseCode;
-    
-    console.log(`[RESET] Cleared ${previousCount} attendee(s). New session started.`);
-    console.log(`[SESSION] Course: ${sessionInfo.courseName}, Code: ${sessionInfo.courseCode || 'N/A'}`);
-    res.json({ success: true, message: 'All previous connections cleared.', previousCount, sessionInfo });
+    const { courseName, courseCode, pin, lecturerId } = req.body;
+
+    if (!pin || !/^\d{6}$/.test(pin)) {
+        return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    }
+
+    let session = activeSessions.get(pin);
+    let previousCount = 0;
+
+    if (session) {
+        previousCount = session.attendees.length;
+        session.attendees = [];
+        if (courseName) session.courseName = courseName;
+        if (courseCode !== undefined) session.courseCode = courseCode;
+        if (lecturerId) session.lecturerId = lecturerId;
+    } else {
+        // Create new session bucket if PIN doesn't exist
+        const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
+        activeSessions.set(pin, {
+            courseName: courseName || 'Untitled Course',
+            courseCode: courseCode || null,
+            lecturerId: lecturerId || 'unknown',
+            sessionToken: null,
+            attendees: [],
+            createdAt: new Date(),
+            expiresAt: expiresAt,
+        });
+    }
+
+    console.log(`[RESET] PIN ${pin}: Cleared ${previousCount} attendee(s). New session started.`);
+    console.log(`[SESSION] Course: ${courseName || 'Untitled Course'}, Code: ${courseCode || 'N/A'}`);
+    res.json({ success: true, message: 'Session reset.', previousCount, pin });
 });
 
 app.get('/api/stats', (req, res) => {
+    const pin = req.query.pin;
+    const session = getSessionByPin(pin);
+
+    if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+    }
+
     const now = new Date();
     const requiredMinutes = sessionConfig.requiredConnectionMinutes;
     let verified = 0;
     let pending = 0;
 
-    attendees.forEach(a => {
+    session.attendees.forEach(a => {
         const connectedAt = new Date(a.connectedAt);
         const durationMinutes = Math.floor((now - connectedAt) / 60000);
         if (durationMinutes >= requiredMinutes) {
@@ -384,19 +530,25 @@ app.get('/api/stats', (req, res) => {
         }
     });
 
-    res.json({ total: attendees.length, verified, pending, requiredConnectionMinutes: requiredMinutes });
+    res.json({ total: session.attendees.length, verified, pending, requiredConnectionMinutes: requiredMinutes });
 });
 
-// ====== Remove a specific attendee by matricule ======
+// ====== Remove a specific attendee by matricule (scoped by PIN) ======
 app.post('/api/remove-attendee', (req, res) => {
-    const { matricule } = req.body;
+    const { matricule, pin } = req.body;
     if (!matricule) {
         return res.status(400).json({ success: false, error: 'Matricule is required' });
     }
-    const beforeCount = attendees.length;
-    attendees = attendees.filter(a => a.matricule !== matricule);
-    const removedCount = beforeCount - attendees.length;
-    console.log(`[REMOVE] Removed ${removedCount} attendee(s) with matricule ${matricule}`);
+
+    const session = getSessionByPin(pin);
+    if (!session) {
+        return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    const beforeCount = session.attendees.length;
+    session.attendees = session.attendees.filter(a => a.matricule !== matricule);
+    const removedCount = beforeCount - session.attendees.length;
+    console.log(`[REMOVE] PIN ${pin}: Removed ${removedCount} attendee(s) with matricule ${matricule}`);
     res.json({ success: true, removedCount });
 });
 

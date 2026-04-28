@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../models/session.dart';
@@ -48,6 +49,7 @@ class AttendanceProvider extends ChangeNotifier {
     try {
       _activeSession = await _storage.getActiveSession();
       if (_activeSession != null) {
+        _syncApiServiceSession();
         await refreshRecords();
       }
       _error = null;
@@ -57,6 +59,16 @@ class AttendanceProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Sync the API service with the current session's PIN/token
+  void _syncApiServiceSession() {
+    if (_activeSession?.sessionPin != null) {
+      _apiService.setSessionPin(_activeSession!.sessionPin!);
+    }
+    if (_activeSession?.sessionToken != null) {
+      _apiService.setSessionToken(_activeSession!.sessionToken!);
+    }
   }
 
   /// Create a new session
@@ -84,19 +96,17 @@ class AttendanceProvider extends ChangeNotifier {
       _currentRecords = [];
       _error = null;
 
-      // Reset server attendees and push new session config (best-effort; don't fail if offline)
+      // Sync PIN/token to API service
+      _syncApiServiceSession();
+
+      // Push session config to server (best-effort; don't fail if offline)
       try {
-        await _apiService.resetServerSession(
-          courseName: courseName,
-          courseCode: courseCode,
-        );
         await _apiService.pushSessionConfig(
           requiredConnectionMinutes: requiredConnectionMinutes,
           gracePeriodMinutes: gracePeriodMinutes,
         );
       } catch (e) {
-        // Server might be offline; session is still valid locally
-        debugPrint('Server reset/config push failed (offline?): $e');
+        debugPrint('Server config push failed (offline?): $e');
       }
     } catch (e) {
       _error = e.toString();
@@ -315,6 +325,7 @@ class AttendanceProvider extends ChangeNotifier {
       );
 
       await _sessionService.endSession(_activeSession!.id);
+      _apiService.clearSession();
       _activeSession = null;
       _currentRecords = [];
       _serverStats = {};
@@ -489,3 +500,4 @@ class AttendanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
+

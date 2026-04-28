@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Secure Validation | Matricule & Email Form</title>
+    <title>Secure Validation | Matricule &amp; Email Form</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; }
         body { min-height: 100vh; background: linear-gradient(145deg, #eef2fa 0%, #dce5f0 100%); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
@@ -31,6 +31,8 @@
         .info-message { color: #1e475b; font-weight: 500; }
         .error-message { font-size: 0.75rem; color: #e53e3e; margin-top: 0.3rem; font-weight: 500; }
         .helper-text { font-size: 0.7rem; color: #5a6e7c; margin-top: 0.2rem; }
+        .session-info { background: #e8f5e9; border-radius: 1rem; padding: 1rem 1.2rem; margin-bottom: 1.5rem; border-left: 5px solid #2e7d32; }
+        .session-info .result-title { color: #1b5e20; }
         @media (max-width: 480px) { .form-body { padding: 1.5rem; } .form-header { padding: 1.5rem 1rem; } .form-header h1 { font-size: 1.5rem; } }
     </style>
 </head>
@@ -43,33 +45,53 @@
     </div>
 
     <div class="form-body">
+        <!-- PIN Input -->
         <div class="input-group">
-            <label>👤 Username <span class="required-star">*</span></label>
-            <input type="text" id="username" class="input-field" placeholder="e.g., Ngahame Lael" autocomplete="off">
-            <div class="error-message" id="usernameError"></div>
-            <div class="helper-text">2–40 characters allowed.</div>
+            <label>🔑 Session PIN <span class="required-star">*</span></label>
+            <input type="text" id="sessionPin" class="input-field"
+                   placeholder="e.g., 558219" maxlength="6" inputmode="numeric" autocomplete="off">
+            <div class="error-message" id="pinError"></div>
+            <div class="helper-text">Enter the 6-digit PIN displayed by your lecturer.</div>
         </div>
 
-        <div class="input-group">
-            <label>🎓 Matricule <span class="required-star">*</span></label>
-            <input type="text" id="matricule" class="input-field" placeholder="e.g., ICTU20283020" autocomplete="off">
-            <div class="error-message" id="matriculeError"></div>
-            <div class="helper-text">4–20 characters, alphanumeric.</div>
+        <!-- Session info panel (appears after valid PIN) -->
+        <div id="sessionInfoPanel" class="session-info" style="display: none;">
+            <div class="result-title">📚 SESSION</div>
+            <div class="result-content" id="sessionDetails">
+                <!-- Populated via JS -->
+            </div>
         </div>
 
-        <div class="input-group">
-            <label>✉️ Email Address <span class="required-star">*</span></label>
-            <input type="email" id="email" class="input-field" placeholder="name@example.com" autocomplete="off">
-            <div class="error-message" id="emailError"></div>
-            <div class="helper-text">Valid email format required.</div>
-        </div>
+        <!-- Registration form -->
+        <div id="registrationForm" style="display: none;">
+            <div class="input-group">
+                <label>👤 Username <span class="required-star">*</span></label>
+                <input type="text" id="username" class="input-field" placeholder="e.g., Ngahame Lael" autocomplete="off">
+                <div class="error-message" id="usernameError"></div>
+                <div class="helper-text">2–40 characters allowed.</div>
+            </div>
 
-        <button class="validate-btn" id="validateBtn">✓ Validate & Register</button>
+            <div class="input-group">
+                <label>🎓 Matricule <span class="required-star">*</span></label>
+                <input type="text" id="matricule" class="input-field" placeholder="e.g., ICTU20283020" autocomplete="off">
+                <div class="error-message" id="matriculeError"></div>
+                <div class="helper-text">4–20 characters, alphanumeric.</div>
+            </div>
+
+            <div class="input-group">
+                <label>✉️ Email Address <span class="required-star">*</span></label>
+                <input type="email" id="email" class="input-field" placeholder="name@example.com" autocomplete="off">
+                <div class="error-message" id="emailError"></div>
+                <div class="helper-text">Valid email format required.</div>
+            </div>
+
+            <button class="validate-btn" id="validateBtn">✓ Validate &amp; Register</button>
+        </div>
 
         <div class="result-panel" id="resultPanel">
             <div class="result-title">📋 STATUS</div>
             <div class="result-content" id="resultMessage">
-                Fill in all fields and click "Validate & Register"
+                Enter the Session PIN to begin registration.
             </div>
         </div>
     </div>
@@ -77,15 +99,27 @@
 
 <script>
     (function() {
+        const sessionPinInput = document.getElementById('sessionPin');
         const usernameInput = document.getElementById('username');
         const matriculeInput = document.getElementById('matricule');
         const emailInput = document.getElementById('email');
         const validateBtn = document.getElementById('validateBtn');
         const resultMessageDiv = document.getElementById('resultMessage');
+        const sessionInfoPanel = document.getElementById('sessionInfoPanel');
+        const sessionDetailsDiv = document.getElementById('sessionDetails');
+        const registrationForm = document.getElementById('registrationForm');
+        const pinErrorDiv = document.getElementById('pinError');
 
         // Derive the server URL from the current page address so it works
         // even if the hotspot IP or port changes.
         const SERVER_URL = window.location.origin;
+
+        // Check for session token in URL (token-in-QR fallback)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionToken = urlParams.get('s');
+
+        let validatedSession = null;
+        let currentPin = '';
 
         // Test connectivity on page load
         async function testConnection() {
@@ -96,7 +130,7 @@
                     mode: 'cors'
                 });
                 if (response.ok) {
-                    resultMessageDiv.innerHTML = '<span class="success-message">✅ Connected to server! You can now register.</span>';
+                    resultMessageDiv.innerHTML = '<span class="success-message">✅ Connected to server!</span>';
                 } else {
                     resultMessageDiv.innerHTML = '<span class="error-summary">⚠️ Server responded with error ' + response.status + '. Please reload the page.</span>';
                 }
@@ -107,6 +141,67 @@
 
         // Run connectivity test immediately
         testConnection();
+
+        // If token is in URL, use token mode (skip PIN)
+        if (sessionToken) {
+            currentPin = '';
+            validatedSession = { tokenMode: true };
+            sessionPinInput.parentElement.style.display = 'none';
+            sessionInfoPanel.style.display = 'block';
+            sessionDetailsDiv.innerHTML = '<strong>Token Mode</strong><br>Registering via QR code link.';
+            registrationForm.style.display = 'block';
+            resultMessageDiv.innerHTML = '<span class="success-message">✅ QR token detected. Fill in your details to register.</span>';
+        }
+
+        // Validate PIN with server
+        async function validatePin(pin) {
+            pinErrorDiv.textContent = '';
+            if (!pin || !/^\d{6}$/.test(pin)) {
+                pinErrorDiv.textContent = '❌ Please enter a valid 6-digit PIN.';
+                return false;
+            }
+
+            resultMessageDiv.innerHTML = '<span class="info-message">⏳ Verifying PIN...</span>';
+            try {
+                const response = await fetch(SERVER_URL + '/api/validate-pin', {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    validatedSession = data;
+                    currentPin = pin;
+                    sessionDetailsDiv.innerHTML =
+                        '<strong>' + (data.courseName || 'Unknown Course') + '</strong>' +
+                        (data.courseCode ? ' (' + data.courseCode + ')' : '') +
+                        '<br>Lecturer: ' + (data.lecturerId || 'Unknown');
+                    sessionInfoPanel.style.display = 'block';
+                    registrationForm.style.display = 'block';
+                    resultMessageDiv.innerHTML = '<span class="success-message">✅ PIN verified! Fill in your details to register.</span>';
+                    return true;
+                } else {
+                    const err = await response.text();
+                    pinErrorDiv.textContent = '❌ Invalid or expired PIN. Check with your lecturer.';
+                    resultMessageDiv.innerHTML = '<span class="error-summary">❌ ' + err + '</span>';
+                    return false;
+                }
+            } catch (err) {
+                pinErrorDiv.textContent = '❌ Cannot verify PIN. Check your connection.';
+                resultMessageDiv.innerHTML = '<span class="error-summary">❌ Network error: ' + err.message + '</span>';
+                return false;
+            }
+        }
+
+        // PIN input listener
+        sessionPinInput.addEventListener('blur', async () => {
+            const pin = sessionPinInput.value.trim();
+            if (pin.length === 6) {
+                await validatePin(pin);
+            }
+        });
 
         function validateUsername(raw) {
             const trimmed = raw.trim();
@@ -139,8 +234,8 @@
                 const response = await fetch(SERVER_URL + '/connect', {
                     method: 'POST',
                     mode: 'cors',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams(data)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
                 });
 
                 const responseText = await response.text();
@@ -170,11 +265,22 @@
             document.getElementById('emailError').textContent = eErr;
 
             if (!uErr && !mErr && !eErr) {
-                submitData({
+                const payload = {
                     username: usernameInput.value.trim(),
                     matricule: matriculeInput.value.trim(),
                     email: emailInput.value.trim()
-                });
+                };
+
+                if (sessionToken) {
+                    payload.sessionToken = sessionToken;
+                } else if (currentPin) {
+                    payload.sessionPin = currentPin;
+                } else {
+                    resultMessageDiv.innerHTML = '<span class="error-summary">⚠️ Please enter a valid Session PIN first.</span>';
+                    return;
+                }
+
+                submitData(payload);
             } else {
                 resultMessageDiv.innerHTML = `<span class="error-summary">⚠️ Please fix the errors above.</span>`;
             }

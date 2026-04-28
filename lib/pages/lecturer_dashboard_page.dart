@@ -274,7 +274,7 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
               tooltip: 'Share PDF Report',
               onPressed: _downloadAndShareServerPdf,
             ),
-          IconButton(
+            IconButton(
               icon: const Icon(Icons.stop),
               onPressed: _endSession,
             ),
@@ -471,13 +471,15 @@ class _SessionInfoCard extends StatelessWidget {
 
   const _SessionInfoCard({required this.session});
 
-  // IMPORTANT: This URL must match your Windows Mobile Hotspot IP.
-  // From ipconfig, your hotspot adapter is "Connexion au réseau local* 10"
-  // with IPv4 Address: 192.168.137.1
-  static const String _qrUrl = 'http://192.168.137.1:5501/public/hotspot.html';
+  // Base URL for the permanent poster QR — never changes
+  static const String _baseQrUrl = 'http://192.168.137.1:5501/public/hotspot.html';
 
   @override
   Widget build(BuildContext context) {
+    final pin = session.sessionPin as String?;
+    final token = session.sessionToken as String?;
+    final tokenQrUrl = token != null ? '$_baseQrUrl?s=$token' : null;
+
     return Card(
       child: Padding(
         padding: AppSpacing.paddingMd,
@@ -537,6 +539,63 @@ class _SessionInfoCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Token QR (ad-hoc fallback) — smaller, optional
+                if (tokenQrUrl != null)
+                  Container(
+                    padding: AppSpacing.paddingSm,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: QrImageView(
+                      data: tokenQrUrl,
+                      size: 80,
+                    ),
+                  ),
+              ],
+            ),
+            const Divider(height: AppSpacing.lg),
+
+            // ─── PIN DISPLAY (Large & Prominent) ───
+            if (pin != null)
+              Container(
+                width: double.infinity,
+                padding: AppSpacing.paddingLg,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'SESSION PIN',
+                      style: context.textStyles.labelLarge?.withColor(
+                        Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      pin,
+                      style: context.textStyles.displayLarge?.bold.withColor(
+                        Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Write this on the board',
+                      style: context.textStyles.bodySmall?.withColor(
+                        Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (pin != null) const SizedBox(height: AppSpacing.md),
+
+            // ─── STATIC POSTER QR ───
+            Row(
+              children: [
                 Container(
                   padding: AppSpacing.paddingSm,
                   decoration: BoxDecoration(
@@ -544,20 +603,39 @@ class _SessionInfoCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: QrImageView(
-                    data: _qrUrl,
-                    size: 100,
+                    data: _baseQrUrl,
+                    size: 80,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Permanent Poster QR',
+                        style: context.textStyles.titleSmall?.semiBold,
+                      ),
+                      Text(
+                        'Students scan this once and bookmark the page. The PIN changes each session.',
+                        style: context.textStyles.bodySmall?.withColor(
+                          Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const Divider(height: AppSpacing.lg),
+
+            const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
                 const Icon(Icons.link, size: 16),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    _qrUrl,
+                    _baseQrUrl,
                     style: context.textStyles.bodySmall?.withColor(
                       Theme.of(context).colorScheme.primary,
                     ),
@@ -702,3 +780,4 @@ class _AttendanceRecordTile extends StatelessWidget {
     );
   }
 }
+

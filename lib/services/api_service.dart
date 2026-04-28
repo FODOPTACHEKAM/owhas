@@ -9,6 +9,16 @@ class ApiService {
   // with IPv4 Address: 192.168.137.1
   static const String baseUrl = 'http://192.168.137.1:5501';
 
+  String? _sessionPin;
+  String? _sessionToken;
+
+  void setSessionPin(String pin) => _sessionPin = pin;
+  void setSessionToken(String token) => _sessionToken = token;
+  void clearSession() {
+    _sessionPin = null;
+    _sessionToken = null;
+  }
+
   /// Ping the server to check if it's reachable
   Future<void> pingServer() async {
     try {
@@ -27,8 +37,11 @@ class ApiService {
   /// Fetch the attendance PDF bytes from the server's /export endpoint
   Future<Uint8List?> fetchServerPdf() async {
     try {
+      final pin = _sessionPin;
+      if (pin == null) throw Exception('No session PIN set');
+
       final response = await http.get(
-        Uri.parse('$baseUrl/export'),
+        Uri.parse('$baseUrl/export?pin=$pin'),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -44,8 +57,11 @@ class ApiService {
   /// Fetch the full list of attendees from the server's /api/attendees endpoint
   Future<List<Map<String, dynamic>>> fetchServerAttendees() async {
     try {
+      final pin = _sessionPin;
+      if (pin == null) throw Exception('No session PIN set');
+
       final response = await http.get(
-        Uri.parse('$baseUrl/api/attendees'),
+        Uri.parse('$baseUrl/api/attendees?pin=$pin'),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -63,8 +79,11 @@ class ApiService {
   /// Fetch stats (total, verified, pending) from the server's /api/stats endpoint
   Future<Map<String, dynamic>> fetchServerStats() async {
     try {
+      final pin = _sessionPin;
+      if (pin == null) throw Exception('No session PIN set');
+
       final response = await http.get(
-        Uri.parse('$baseUrl/api/stats'),
+        Uri.parse('$baseUrl/api/stats?pin=$pin'),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -84,6 +103,9 @@ class ApiService {
     String? email,
   }) async {
     try {
+      final pin = _sessionPin;
+      if (pin == null) throw Exception('No session PIN set');
+
       final response = await http.post(
         Uri.parse('$baseUrl/connect'),
         headers: {'Content-Type': 'application/json'},
@@ -91,6 +113,7 @@ class ApiService {
           'username': username,
           'matricule': matricule,
           if (email != null && email.isNotEmpty) 'email': email,
+          'sessionPin': pin,
         }),
       ).timeout(const Duration(seconds: 10));
 
@@ -104,16 +127,20 @@ class ApiService {
 
   /// Reset the server's attendee list (call when creating a new session)
   Future<void> resetServerSession({
+    required String pin,
     String? courseName,
     String? courseCode,
+    String? lecturerId,
   }) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/reset'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'pin': pin,
           if (courseName != null) 'courseName': courseName,
           if (courseCode != null) 'courseCode': courseCode,
+          if (lecturerId != null) 'lecturerId': lecturerId,
         }),
       ).timeout(const Duration(seconds: 10));
 
@@ -151,10 +178,16 @@ class ApiService {
   /// Remove an attendee from the server by matricule
   Future<void> removeAttendeeOnServer(String matricule) async {
     try {
+      final pin = _sessionPin;
+      if (pin == null) throw Exception('No session PIN set');
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/remove-attendee'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'matricule': matricule}),
+        body: jsonEncode({
+          'matricule': matricule,
+          'pin': pin,
+        }),
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
@@ -195,3 +228,4 @@ class ApiService {
     }
   }
 }
+
