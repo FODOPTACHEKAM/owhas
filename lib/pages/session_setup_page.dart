@@ -189,7 +189,7 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                 controller: _lecturerNameController,
                 decoration: const InputDecoration(
                   labelText: 'Lecturer Name',
-                  hintText: 'e.g., Dr. John Smith',
+                  hintText: 'e.g., Dr. Stephane Pride',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
                 ),

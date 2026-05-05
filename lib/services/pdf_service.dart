@@ -64,11 +64,11 @@ class PdfService {
           ),
           pw.Text(
             'Session Date: ${session.startTime.toString().substring(0, 16)}',
-            style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.Text(
             'Duration Required: ${session.requiredConnectionMinutes} min',
-            style: const pw.TextStyle(fontSize: 14),
+            style: pw.TextStyle(fontSize: 14),
           ),
           if (hasPreviousData)
             pw.Text(

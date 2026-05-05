@@ -9,6 +9,8 @@ import '../models/student.dart';
 import 'storage_service.dart';
 import 'device_service.dart';
 import 'server_config.dart';
+import 'cloud_service.dart';
+import 'location_service.dart';
 
 /// Service for managing attendance sessions
 class SessionService {
@@ -18,6 +20,8 @@ class SessionService {
 
   final StorageService _storage = StorageService();
   final DeviceService _deviceService = DeviceService();
+  final CloudService _cloudService = CloudService();
+  final LocationService _locationService = LocationService();
   final Uuid _uuid = const Uuid();
 
   Timer? _connectionTracker;
@@ -147,6 +151,16 @@ class SessionService {
     );
 
     await _storage.saveSession(session);
+
+    // Sync to cloud if signed in
+    if (_cloudService.isSignedIn) {
+      try {
+        await _cloudService.syncSession(session);
+      } catch (e) {
+        print('[SessionService] Cloud sync failed (offline?): $e');
+      }
+    }
+
     _startConnectionTracking(session.id);
 
     // Start auto-end timer
@@ -159,11 +173,12 @@ class SessionService {
     return session;
   }
 
-  /// Register a student for the active session
+  /// Register a student for the active session with location collection
   Future<AttendanceRecord?> registerStudent({
     required String matricule,
     required String studentName,
     String? email,
+    bool collectLocation = true,
   }) async {
     final session = await _storage.getActiveSession();
     if (session == null) {
@@ -201,6 +216,16 @@ class SessionService {
       await _storage.saveStudent(student);
     }
 
+    // Collect location if enabled
+    AttendanceLocation? location;
+    if (collectLocation) {
+      try {
+        location = await _locationService.collectLocation();
+      } catch (e) {
+        print('[SessionService] Location collection failed: $e');
+      }
+    }
+
     final now = DateTime.now();
     final record = AttendanceRecord(
       id: _uuid.v4(),
@@ -213,12 +238,22 @@ class SessionService {
       connectionDurationMinutes: 0,
       isVerified: false,
       deviceFingerprint: deviceFingerprint,
+      location: location,
       createdAt: now,
       updatedAt: now,
     );
 
     await _storage.saveAttendanceRecord(record);
     _studentJoinTimes[record.id] = now;
+
+    // Sync to cloud if signed in
+    if (_cloudService.isSignedIn) {
+      try {
+        await _cloudService.syncAttendanceRecord(session.id, record);
+      } catch (e) {
+        print('[SessionService] Cloud sync failed (offline?): $e');
+      }
+    }
 
     return record;
   }
@@ -271,10 +306,19 @@ class SessionService {
 
     await _storage.saveAttendanceRecord(record);
 
+    // Sync to cloud if signed in
+    if (_cloudService.isSignedIn) {
+      try {
+        await _cloudService.syncAttendanceRecord(session.id, record);
+      } catch (e) {
+        print('[SessionService] Cloud sync failed (offline?): $e');
+      }
+    }
+
     return record;
   }
 
-  /// End a session
+  /// End a session and sync to cloud
   Future<void> endSession(String sessionId) async {
     final sessions = await _storage.getSessions();
     final session = sessions.where((s) => s.id == sessionId).firstOrNull;
@@ -290,6 +334,16 @@ class SessionService {
       // Deactivate PIN on server
       if (session.sessionPin != null) {
         await _endServerSession(session.sessionPin!);
+      }
+
+      // Full sync to cloud if signed in
+      if (_cloudService.isSignedIn) {
+        try {
+          final records = await _storage.getAttendanceRecords(sessionId);
+          await _cloudService.fullSessionSync(updatedSession, records);
+        } catch (e) {
+          print('[SessionService] Cloud full sync failed: $e');
+        }
       }
     }
 
@@ -371,4 +425,3 @@ class SessionService {
     _studentJoinTimes.remove(recordId);
   }
 }
-

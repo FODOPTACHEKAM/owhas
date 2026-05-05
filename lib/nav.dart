@@ -4,6 +4,8 @@ import 'pages/session_setup_page.dart';
 import 'pages/lecturer_dashboard_page.dart';
 import 'pages/student_registration_page.dart';
 import 'pages/signature_setup_page.dart';
+import 'pages/cloud_login_page.dart';
+import 'pages/cloud_sessions_page.dart';
 
 /// GoRouter configuration for app navigation
 class AppRouter {
@@ -45,6 +47,20 @@ class AppRouter {
           child: SignatureSetupPage(),
         ),
       ),
+      GoRoute(
+        path: AppRoutes.cloudLogin,
+        name: 'cloudLogin',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: CloudLoginPage(),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.cloudSessions,
+        name: 'cloudSessions',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: CloudSessionsPage(),
+        ),
+      ),
     ],
   );
 }
@@ -56,4 +72,6 @@ class AppRoutes {
   static const String dashboard = '/dashboard';
   static const String register = '/register';
   static const String signature = '/signature';
+  static const String cloudLogin = '/cloud-login';
+  static const String cloudSessions = '/cloud-sessions';
 }

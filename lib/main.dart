@@ -4,11 +4,13 @@ import 'theme.dart';
 import 'nav.dart';
 import 'providers/attendance_provider.dart';
 import 'services/server_config.dart';
+import 'services/cloud_service.dart';
 
 /// Main entry point for the Hotspot Attendance System
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ServerConfig().detect();
+  await CloudService().initialize();
   runApp(const MyApp());
 }
 
