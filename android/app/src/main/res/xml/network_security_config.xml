@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Trust user-installed CAs for all known local hotspot gateway IPs.
+        This allows the Flutter app to connect to the HTTPS server (port 5443)
+        after the mkcert root CA has been installed on the device via
+        Settings > Security > Install certificates > CA certificate.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.137.1</domain>
+        <domain includeSubdomains="false">192.168.43.1</domain>
+        <domain includeSubdomains="false">10.0.0.1</domain>
+        <domain includeSubdomains="false">172.20.10.1</domain>
+        <domain includeSubdomains="false">192.168.50.1</domain>
+        <domain includeSubdomains="false">192.168.0.1</domain>
+        <domain includeSubdomains="false">192.168.1.1</domain>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

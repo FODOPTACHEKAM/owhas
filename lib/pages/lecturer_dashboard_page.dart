@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/attendance_provider.dart';
-import '../services/signature_service.dart';
-import '../services/server_config.dart';
-import '../theme.dart';
+import '../nav.dart';
+import '../widgets/dashboard/session_header.dart';
+import '../widgets/dashboard/qr_code_section.dart';
+import '../widgets/dashboard/attendance_records_section.dart';
+import '../utils/dialog_helpers.dart';
 
 class LecturerDashboardPage extends StatefulWidget {
   const LecturerDashboardPage({super.key});
@@ -16,8 +16,8 @@ class LecturerDashboardPage extends StatefulWidget {
 }
 
 class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
-  Offset _dragOffset = const Offset(0, 0);
-  String _searchQuery = '';
+  bool _isEndingSession = false;
+  int _qrRefreshKey = 0;
 
   @override
   void initState() {
@@ -26,12 +26,30 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
   }
 
   void _startAutoRefresh() {
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        context.read<AttendanceProvider>().refreshRecords();
-        context.read<AttendanceProvider>().refreshWifiDeviceCount();
-        _startAutoRefresh();
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+
+      final provider = context.read<AttendanceProvider>();
+      final session = provider.activeSession;
+
+      // Check if the session has expired
+      if (session != null && session.endTime != null && DateTime.now().isAfter(session.endTime!)) {
+        await provider.forceEndSession();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session ended — time limit reached'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          context.go(AppRoutes.home);
+        }
+        return;
       }
+
+      provider.refreshRecords();
+      provider.refreshWifiDeviceCount();
+      _startAutoRefresh();
     });
   }
 
@@ -54,83 +72,34 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
     }
   }
 
+  Future<void> _downloadPdfToDevice() async {
+    final provider = context.read<AttendanceProvider>();
+    final filePath = await provider.downloadPDFReport();
+    if (mounted) {
+      if (filePath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF saved to: $filePath')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.error ?? 'Failed to download PDF'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _showAddManualStudentDialog() async {
-    final nameController = TextEditingController();
-    final matriculeController = TextEditingController();
-    final emailController = TextEditingController();
+    final data = await DialogHelpers.showAddManualStudentDialog(context);
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Student Manually'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'For students with discharged phones or no Wi-Fi access. They will appear in the report with no status.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Student Name *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: matriculeController,
-                decoration: const InputDecoration(
-                  labelText: 'Matricule *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.badge),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email (optional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (nameController.text.trim().isEmpty ||
-                  matriculeController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Name and Matricule are required')),
-                );
-                return;
-              }
-              Navigator.pop(context, true);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == true && mounted) {
+    if (data != null && mounted) {
       final provider = context.read<AttendanceProvider>();
       final success = await provider.registerManualStudent(
-        matricule: matriculeController.text.trim(),
-        studentName: nameController.text.trim(),
-        email: emailController.text.trim().isEmpty
-            ? null
-            : emailController.text.trim(),
+        matricule: data.matricule,
+        studentName: data.name,
+        email: data.email,
       );
 
       if (mounted) {
@@ -148,30 +117,13 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
         }
       }
     }
-
-    nameController.dispose();
-    matriculeController.dispose();
-    emailController.dispose();
   }
 
   Future<void> _confirmRemoveStudent(dynamic record) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Student?'),
-        content: Text('Are you sure you want to remove ${record.studentName} (${record.matricule}) from this session?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    final confirm = await DialogHelpers.showConfirmRemoveStudentDialog(
+      context,
+      record.studentName,
+      record.matricule,
     );
 
     if (confirm == true && mounted) {
@@ -189,58 +141,39 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
   }
 
   Future<void> _endSession() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('End Session?'),
-        content: const Text(
-          'This will close the session and generate the attendance report. Students will no longer be able to register.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('End Session'),
-          ),
-        ],
-      ),
-    );
-
+    final confirm = await DialogHelpers.showEndSessionDialog(context);
     if (confirm != true || !mounted) return;
 
-    final provider = context.read<AttendanceProvider>();
-    final filePath = await provider.endSessionAndGenerateReport();
+    setState(() => _isEndingSession = true);
 
-    if (mounted) {
-      if (filePath != null) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Session Ended'),
-            content: Text('Report saved to:\n$filePath'),
-            actions: [
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.go('/');
-                },
-                child: const Text('Done'),
-              ),
-            ],
-          ),
-        );
-      } else {
+    try {
+      await context.read<AttendanceProvider>().forceEndSession();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isEndingSession = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(provider.error ?? 'Failed to generate report'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+          SnackBar(content: Text('Failed to end session: $e')),
         );
+        return;
       }
+    }
+
+    if (!mounted) return;
+    context.go(AppRoutes.home);
+  }
+
+  Future<void> _retryServerConnection(AttendanceProvider provider) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await provider.retryServerConnection();
+    if (!mounted) return;
+    if (provider.serverWarning == null) {
+      setState(() => _qrRefreshKey++);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Server connected successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -253,8 +186,12 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
         context.go('/');
       },
       child: Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         appBar: AppBar(
           title: const Text('Live Session'),
+          centerTitle: false,
+          elevation: 0,
+          backgroundColor: Theme.of(context).colorScheme.primary,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/'),
@@ -262,508 +199,202 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
               onPressed: () =>
                   context.read<AttendanceProvider>().refreshRecords(),
             ),
             IconButton(
-              icon: const Icon(Icons.draw),
-              tooltip: 'Digital Signature',
-              onPressed: () => context.go('/signature'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.share),
-              tooltip: 'Share PDF Report',
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Share Report',
               onPressed: _downloadAndShareServerPdf,
             ),
             IconButton(
-              icon: const Icon(Icons.stop),
-              onPressed: _endSession,
+              icon: const Icon(Icons.download_outlined),
+              tooltip: 'Download PDF',
+              onPressed: _downloadPdfToDevice,
             ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            Consumer<AttendanceProvider>(
-              builder: (context, provider, _) {
-                final session = provider.activeSession;
-                if (session == null) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('No active session'),
-                        const SizedBox(height: AppSpacing.md),
-                        FilledButton(
-                          onPressed: () => context.go('/setup'),
-                          child: const Text('Create Session'),
-                        ),
-                      ],
-                    ),
-                  );
+            PopupMenuButton<String>(
+              tooltip: 'More Actions',
+              onSelected: (value) {
+                switch (value) {
+                  case 'signature':
+                    context.go('/signature');
+                    break;
+                  case 'end_session':
+                    _endSession();
+                    break;
+                  case 'add_manual':
+                    _showAddManualStudentDialog();
+                    break;
                 }
-
-                final stats = provider.getStats();
-
-                return SingleChildScrollView(
-                  padding: AppSpacing.paddingMd,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'signature',
+                  child: Row(
                     children: [
-                      _SessionInfoCard(session: session),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              title: 'Total',
-                              value: stats['total'].toString(),
-                              icon: Icons.people,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: _StatCard(
-                              title: 'Verified',
-                              value: stats['verified'].toString(),
-                              icon: Icons.check_circle,
-                              color: Colors.green,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: _StatCard(
-                              title: 'Pending',
-                              value: stats['pending'].toString(),
-                              icon: Icons.pending,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              title: 'Wi-Fi Devices',
-                              value: provider.activeWifiDevices.toString(),
-                              icon: Icons.wifi_tethering,
-                              color: Colors.blueAccent,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: _StatCard(
-                              title: 'Coverage',
-                              value: () {
-                                final total = stats['total'] ?? 0;
-                                final verified = stats['verified'] ?? 0;
-                                if (total == 0) return '0%';
-                                return '${((verified / total) * 100).toStringAsFixed(0)}%';
-                              }(),
-                              icon: Icons.signal_wifi_statusbar_4_bar,
-                              color: Colors.teal,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Card(
-                        child: Padding(
-                          padding: AppSpacing.paddingMd,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Real-Time Attendance Heatmap',
-                                style: context.textStyles.titleLarge?.semiBold,
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              TextField(
-                                onChanged: (value) {
-                                  setState(() {
-                                    _searchQuery = value.trim().toLowerCase();
-                                  });
-                                },
-                                decoration: InputDecoration(
-                                  hintText: 'Search by name or matricule...',
-                                  prefixIcon: const Icon(Icons.search),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              Builder(
-                                builder: (context) {
-                                  final filteredRecords = provider.currentRecords.where((r) {
-                                    if (_searchQuery.isEmpty) return true;
-                                    return r.studentName.toLowerCase().contains(_searchQuery) ||
-                                        r.matricule.toLowerCase().contains(_searchQuery);
-                                  }).toList();
-
-                                  if (filteredRecords.isEmpty) {
-                                    return const Padding(
-                                      padding: AppSpacing.paddingLg,
-                                      child: Center(
-                                        child: Text('No students found'),
-                                      ),
-                                    );
-                                  }
-
-                                  return ListView.separated(
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    itemCount: filteredRecords.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: AppSpacing.sm),
-                                    itemBuilder: (context, index) {
-                                      final record = filteredRecords[index];
-                                      return _AttendanceRecordTile(
-                                        record: record,
-                                        onRemove: () => _confirmRemoveStudent(record),
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      Icon(Icons.draw, size: 20),
+                      SizedBox(width: 8),
+                      Text('Digital Signature'),
                     ],
                   ),
-                );
-              },
-            ),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final maxX = constraints.maxWidth - 72; // FAB width + padding
-                final maxY = constraints.maxHeight - 72;
-                return Positioned(
-                  left: (16 + _dragOffset.dx).clamp(0.0, maxX),
-                  top: (constraints.maxHeight - 72 - _dragOffset.dy).clamp(0.0, maxY),
-                  child: GestureDetector(
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _dragOffset += Offset(details.delta.dx, -details.delta.dy);
-                      });
-                    },
-                    child: FloatingActionButton.small(
-                      onPressed: _showAddManualStudentDialog,
-                      tooltip: 'Add Student',
-                      child: const Icon(Icons.person_add),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SessionInfoCard extends StatelessWidget {
-  final dynamic session;
-
-  const _SessionInfoCard({required this.session});
-
-  /// Dynamic QR URL auto-detected for emulator or hotspot
-  String get _baseQrUrl => ServerConfig().baseQrUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final pin = session.sessionPin as String?;
-    final endTime = session.startTime.add(Duration(minutes: session.durationMinutes));
-
-    return Card(
-      child: Padding(
-        padding: AppSpacing.paddingMd,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                const PopupMenuItem(
+                  value: 'add_manual',
+                  child: Row(
                     children: [
-                      Text(
-                        session.courseName,
-                        style: context.textStyles.headlineSmall?.bold,
-                      ),
-                      if (session.courseCode != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          session.courseCode!,
-                          style: context.textStyles.bodyMedium?.withColor(
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Started: ${DateFormat('HH:mm').format(session.startTime)}',
-                        style: context.textStyles.bodyMedium?.withColor(
-                          Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Auto-ends: ${DateFormat('HH:mm').format(endTime)}',
-                        style: context.textStyles.bodySmall?.withColor(
-                          Colors.redAccent,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Req. connection: ${session.requiredConnectionMinutes} min',
-                        style: context.textStyles.bodySmall?.withColor(
-                          Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (session.lecturerName != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          'Lecturer: ${session.lecturerName}',
-                          style: context.textStyles.bodySmall?.withColor(
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ],
+                      Icon(Icons.person_add, size: 20),
+                      SizedBox(width: 8),
+                      Text('Add Manual Student'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'end_session',
+                  child: Row(
+                    children: [
+                      Icon(Icons.stop, size: 20, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('End Session', style: TextStyle(color: Colors.red)),
                     ],
                   ),
                 ),
               ],
             ),
-            const Divider(height: AppSpacing.lg),
-
-            // ─── PIN DISPLAY (Large & Prominent) ───
-            if (pin != null)
-              Container(
-                width: double.infinity,
-                padding: AppSpacing.paddingLg,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
+          ],
+        ),
+        body: _isEndingSession
+            ? const Center(
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      'SESSION PIN',
-                      style: context.textStyles.labelLarge?.withColor(
-                        Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Ending session…'),
+                  ],
+                ),
+              )
+            : Consumer<AttendanceProvider>(
+          builder: (context, provider, _) {
+            final session = provider.activeSession;
+            if (session == null) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.event_busy,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.outline,
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    const SizedBox(height: 16),
                     Text(
-                      pin,
-                      style: context.textStyles.displayLarge?.bold.withColor(
-                        Theme.of(context).colorScheme.primary,
-                      ),
+                      'No Active Session',
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: AppSpacing.xs),
+                    const SizedBox(height: 8),
                     Text(
-                      'Write this on the board',
-                      style: context.textStyles.bodySmall?.withColor(
-                        Theme.of(context).colorScheme.onPrimaryContainer,
+                      'Create a new session to start taking attendance',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: () => context.go('/setup'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create Session'),
                     ),
                   ],
                 ),
-              ),
+              );
+            }
 
-            if (pin != null) const SizedBox(height: AppSpacing.md),
+            final stats = provider.getStats();
 
-            // ─── STATIC POSTER QR ───
-            Row(
+            return Column(
               children: [
-                Container(
-                  padding: AppSpacing.paddingSm,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                  ),
-                  child: QrImageView(
-                    data: _baseQrUrl,
-                    size: 80,
-                  ),
+                // Session Header with PIN and quick stats
+                SessionHeader(
+                  session: session,
+                  stats: stats,
+                  activeWifiDevices: provider.activeWifiDevices,
                 ),
-                const SizedBox(width: AppSpacing.md),
+
+                // Server warning banner with retry button
+                if (provider.serverWarning != null)
+                  _ServerWarningBanner(
+                    message: provider.serverWarning!,
+                    onRetry: () => _retryServerConnection(provider),
+                  ),
+
+                // Main Content
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Permanent Poster QR',
-                        style: context.textStyles.titleSmall?.semiBold,
-                      ),
-                      Text(
-                        'Students scan this once and bookmark the page. The PIN changes each session.',
-                        style: context.textStyles.bodySmall?.withColor(
-                          Theme.of(context).colorScheme.onSurfaceVariant,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // QR Code Section
+                        QrCodeSection(
+                          key: ValueKey(_qrRefreshKey),
+                          sessionToken: session.sessionToken,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
 
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                const Icon(Icons.link, size: 16),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    _baseQrUrl,
-                    style: context.textStyles.bodySmall?.withColor(
-                      Theme.of(context).colorScheme.primary,
+                        const SizedBox(height: 16),
+
+                        // Attendance Records
+                        AttendanceRecordsSection(
+                          records: provider.currentRecords,
+                          onRemove: _confirmRemoveStudent,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
+class _ServerWarningBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
 
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
+  const _ServerWarningBanner({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: AppSpacing.paddingMd,
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              value,
-              style: context.textStyles.headlineMedium?.bold.withColor(color),
-            ),
-            Text(
-              title,
-              style: context.textStyles.labelSmall?.withColor(
-                Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AttendanceRecordTile extends StatelessWidget {
-  final dynamic record;
-  final VoidCallback? onRemove;
-  const _AttendanceRecordTile({required this.record, this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    final isVerified = record.isVerified;
-    final isManual = record.isManual as bool? ?? false;
-
-    final statusColor = isManual
-        ? Colors.grey
-        : isVerified
-            ? Colors.green
-            : Colors.orange;
-
-    final statusIcon = isManual
-        ? Icons.person_outline
-        : isVerified
-            ? Icons.check_circle
-            : Icons.pending;
-
     return Container(
-      padding: AppSpacing.paddingSm,
-      decoration: BoxDecoration(
-        color: statusColor.withAlpha(25),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: statusColor.withAlpha(76)),
-      ),
+      width: double.infinity,
+      color: Colors.orange[800],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(
-            statusIcon,
-            color: statusColor,
-            size: 20,
-          ),
-          const SizedBox(width: AppSpacing.sm),
+          const Icon(Icons.wifi_off, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record.studentName,
-                  style: context.textStyles.bodyMedium?.semiBold,
-                ),
-                Text(
-                  'Matricule: ${record.matricule}',
-                  style: context.textStyles.bodySmall?.withColor(
-                    Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if (isManual)
-                  Text(
-                    'Manual entry',
-                    style: context.textStyles.labelSmall?.withColor(
-                      Colors.grey,
-                    ),
-                  ),
-              ],
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${record.connectionDurationMinutes} min',
-                style: context.textStyles.labelMedium?.semiBold,
-              ),
-              Text(
-                DateFormat('HH:mm').format(record.joinedAt),
-                style: context.textStyles.labelSmall?.withColor(
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          if (onRemove != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            IconButton(
-              icon: const Icon(Icons.person_remove, color: Colors.red),
-              tooltip: 'Remove student',
-              onPressed: onRemove,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-          ],
+            child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
   }
 }
-

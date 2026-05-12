@@ -25,5 +25,38 @@ class FileService {
       throw Exception('Failed to save or share PDF: $e');
     }
   }
+
+  /// Save PDF bytes to device's Downloads folder (or Documents on iOS)
+  Future<String?> savePdfToDevice(Uint8List bytes, {String fileName = 'attendance_report'}) async {
+    try {
+      Directory? directory;
+
+      if (Platform.isAndroid) {
+        // For Android, try to use Downloads directory
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          // Fallback to app documents directory
+          directory = await getExternalStorageDirectory();
+        }
+      } else {
+        // For iOS and other platforms, use documents directory
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      if (directory == null) {
+        throw Exception('Could not access storage directory');
+      }
+
+      final filePath = '${directory.path}/$fileName.pdf';
+      final file = File(filePath);
+
+      // Write bytes to local file
+      await file.writeAsBytes(bytes, flush: true);
+
+      return filePath;
+    } catch (e) {
+      throw Exception('Failed to save PDF to device: $e');
+    }
+  }
 }
 

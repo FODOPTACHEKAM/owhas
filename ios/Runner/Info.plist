@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>attendance_app2026</string>
+	<string>OwHAS</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -41,16 +41,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera is required to verify your identity during attendance registration.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs location to verify student attendance during class sessions.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app needs location to verify student attendance during class sessions.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs location to verify student attendance during class sessions.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>
 </plist>
-
-<key>NSLocationWhenInUseUsageDescription</key>
-<string>This app needs location to verify student attendance during class sessions.</string>
-<key>NSLocationAlwaysUsageDescription</key>
-<string>This app needs location to verify student attendance during class sessions.</string>
-<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-<string>This app needs location to verify student attendance during class sessions.</string>

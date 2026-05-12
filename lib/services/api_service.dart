@@ -197,6 +197,19 @@ class ApiService {
     }
   }
 
+  /// Check whether a PIN matches an active session on the server.
+  /// Returns true if the server confirms the PIN, false otherwise.
+  Future<bool> verifySessionPin(String pin) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/stats?pin=$pin'),
+      ).timeout(const Duration(seconds: 8));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Upload a PDF file to the server for text extraction and parsing
   /// Returns a map with 'students' list and 'sessionNumber'
   Future<Map<String, dynamic>> parsePdfOnServer(Uint8List pdfBytes) async {

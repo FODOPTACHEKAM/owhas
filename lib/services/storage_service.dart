@@ -139,6 +139,24 @@ class StorageService {
     );
   }
 
+  /// Remove all data belonging to a specific session:
+  /// attendance records, student list, and the session entry itself.
+  Future<void> clearSessionData(String sessionId) async {
+    await init();
+    await _prefs!.remove('attendance_$sessionId');
+    await _prefs!.remove('students');
+    final sessions = await getSessions();
+    final filtered = sessions.where((s) => s.id != sessionId).toList();
+    if (filtered.isEmpty) {
+      await _prefs!.remove('sessions');
+    } else {
+      await _prefs!.setString(
+        'sessions',
+        jsonEncode(filtered.map((s) => s.toJson()).toList()),
+      );
+    }
+  }
+
   // Clear all data
   Future<void> clearAll() async {
     await init();

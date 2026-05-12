@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import '../models/session.dart';
@@ -52,21 +53,29 @@ class SessionService {
     String? lecturerName,
     String? sessionToken,
     required int durationMinutes,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
+      final payload = {
+        'pin': pin,
+        'courseName': courseName,
+        'courseCode': courseCode,
+        'lecturerId': lecturerId,
+        'lecturerName': lecturerName,
+        'sessionToken': sessionToken,
+        'durationMinutes': durationMinutes,
+      };
+      if (latitude != null && longitude != null) {
+        payload['latitude'] = latitude;
+        payload['longitude'] = longitude;
+      }
+
       final response = await http.post(
         Uri.parse('$_serverBaseUrl/api/session-init'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'pin': pin,
-          'courseName': courseName,
-          'courseCode': courseCode,
-          'lecturerId': lecturerId,
-          'lecturerName': lecturerName,
-          'sessionToken': sessionToken,
-          'durationMinutes': durationMinutes,
-        }),
-      ).timeout(const Duration(seconds: 10));
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print('[SessionService] Server session initialized with PIN $pin');
@@ -75,6 +84,10 @@ class SessionService {
       } else {
         throw Exception('Server responded with status ${response.statusCode}');
       }
+    } on TimeoutException catch (e) {
+      throw Exception(
+        'Failed to initialize server session: server did not respond at $_serverBaseUrl within 15 seconds. Check that the backend server is running and reachable. ${e.message}',
+      );
     } catch (e) {
       throw Exception('Failed to initialize server session: $e');
     }
@@ -119,16 +132,42 @@ class SessionService {
     final pin = generateSessionPin();
     final token = generateSessionToken();
 
-    // Initialize on server first (fails fast if PIN collision or server down)
-    await _initServerSession(
-      pin: pin,
-      courseName: courseName,
-      courseCode: courseCode,
-      lecturerId: lecturerId,
-      lecturerName: lecturerName,
-      sessionToken: token,
-      durationMinutes: durationMinutes,
-    );
+    // Check mode and capture lecturer location if online
+    double? lat;
+    double? lon;
+    if (ServerConfig().isOnline) {
+      try {
+        final loc = await _locationService.collectLocation();
+        lat = loc?.latitude;
+        lon = loc?.longitude;
+        print('[SessionService] Online Mode: Captured lecturer GPS ($lat, $lon)');
+      } catch (e) {
+        print('[SessionService] Could not collect lecturer location for online mode: $e');
+      }
+    }
+
+    // Initialize on server — best-effort.
+    // A PIN collision (409) is a real conflict and must block.
+    // Any network error (no route, timeout, server down) is non-fatal:
+    // the session is still created locally and works with the Flutter app;
+    // web registration via hotspot.html will be unavailable until the server
+    // is reachable.
+    try {
+      await _initServerSession(
+        pin: pin,
+        courseName: courseName,
+        courseCode: courseCode,
+        lecturerId: lecturerId,
+        lecturerName: lecturerName,
+        sessionToken: token,
+        durationMinutes: durationMinutes,
+        latitude: lat,
+        longitude: lon,
+      );
+    } catch (e) {
+      if (e.toString().contains('PIN already in use')) rethrow;
+      debugPrint('[SessionService] Server init failed — local-only mode: $e');
+    }
 
     final now = DateTime.now();
     final session = AttendanceSession(
@@ -403,6 +442,36 @@ class SessionService {
       'verified': verified,
       'pending': pending,
     };
+  }
+
+  /// Re-register the active session on the server after a reconnection.
+  /// Safe to call even if the session is already registered — a 409 (PIN
+  /// already in use) means the server still has the session, which is
+  /// treated as success.  Returns true if the session is live on the server.
+  Future<bool> resyncToServer() async {
+    final session = await _storage.getActiveSession();
+    if (session == null || session.sessionPin == null) return false;
+
+    try {
+      await _initServerSession(
+        pin: session.sessionPin!,
+        courseName: session.courseName,
+        courseCode: session.courseCode,
+        lecturerId: session.lecturerId,
+        lecturerName: session.lecturerName,
+        sessionToken: session.sessionToken,
+        durationMinutes: session.durationMinutes,
+      );
+      print('[SessionService] Session resynced to server (PIN ${session.sessionPin})');
+      return true;
+    } catch (e) {
+      if (e.toString().contains('PIN already in use')) {
+        print('[SessionService] Session already live on server — resync OK');
+        return true;
+      }
+      print('[SessionService] Resync failed: $e');
+      return false;
+    }
   }
 
   /// Remove a student from the session by record ID.

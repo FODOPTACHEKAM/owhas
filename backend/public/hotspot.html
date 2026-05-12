@@ -1,0 +1,887 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Attendance Registration Portal</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex,nofollow" />
+
+    <style>
+        :root {
+            --primary: #1a3a52;
+            --primary-light: #2d5a7b;
+            --accent: #0084d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --radius-sm: 0.5rem;
+            --radius-md: 0.75rem;
+            --radius-lg: 1.5rem;
+            --radius-xl: 2rem;
+            --shadow-md: 0 4px 6px rgba(0,0,0,.1);
+            --shadow-lg: 0 20px 25px rgba(0,0,0,.15);
+            --transition: all .3s cubic-bezier(.4,0,.2,1);
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        html{scroll-behavior:smooth}
+        body {
+            min-height:100vh;
+            background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+            color:var(--gray-800);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:1.5rem;
+        }
+        body::before {
+            content:'';position:fixed;inset:0;
+            background:radial-gradient(circle at 20% 50%,rgba(0,132,212,.08) 0%,transparent 50%),
+                        radial-gradient(circle at 80% 80%,rgba(26,58,82,.08) 0%,transparent 50%);
+            pointer-events:none;z-index:0;
+        }
+        .container{position:relative;z-index:1;width:100%;max-width:520px}
+        .card{background:#fff;border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);overflow:hidden;transition:var(--transition)}
+        .card:hover{box-shadow:0 25px 50px rgba(0,0,0,.2)}
+
+        /* ── Card header ── */
+        .card-header {
+            background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);
+            padding:2.5rem 2rem 1.5rem;
+            color:#fff;text-align:center;position:relative;overflow:hidden;
+        }
+        .card-header::after {
+            content:'';position:absolute;top:-50%;right:-50%;width:200%;height:200%;
+            background:radial-gradient(circle,rgba(255,255,255,.1) 0%,transparent 70%);
+            pointer-events:none;
+        }
+        .card-header h1{font-size:1.75rem;font-weight:700;letter-spacing:-.5px;margin-bottom:.5rem;position:relative;z-index:1}
+        .card-header p{font-size:.9rem;opacity:.9;font-weight:500;position:relative;z-index:1;margin-bottom:1.25rem}
+
+        /* ── Stepper pills ── */
+        .stepper{display:flex;justify-content:center;gap:8px;position:relative;z-index:1}
+        .step-pill{height:10px;border-radius:5px;background:rgba(255,255,255,.3);transition:all .35s cubic-bezier(.4,0,.2,1)}
+        .step-pill.active{background:#fff;width:28px}
+        .step-pill.done{background:rgba(255,255,255,.65);width:10px}
+        .step-pill.upcoming{width:10px;background:rgba(255,255,255,.3)}
+
+        /* ── Card body ── */
+        .card-body{padding:2rem 2rem}
+
+        /* ── Step header ── */
+        .step-header{display:flex;align-items:center;gap:12px;margin-bottom:1.5rem}
+        .step-icon{
+            width:42px;height:42px;border-radius:10px;
+            background:rgba(26,58,82,.08);
+            display:flex;align-items:center;justify-content:center;
+            font-size:1.25rem;flex-shrink:0;
+        }
+        .step-title{flex:1}
+        .step-title h3{font-size:1rem;font-weight:700;color:var(--gray-900);margin-bottom:2px}
+        .step-title p{font-size:.8rem;color:var(--gray-500)}
+        .step-counter{
+            font-size:.75rem;color:var(--gray-500);
+            background:var(--gray-100);
+            padding:3px 10px;border-radius:20px;white-space:nowrap;
+        }
+
+        /* ── Form elements ── */
+        .form-group{margin-bottom:1.5rem}
+        .form-group:last-child{margin-bottom:0}
+        label{display:flex;align-items:center;gap:.5rem;font-weight:600;font-size:.85rem;color:var(--gray-700);margin-bottom:.4rem;letter-spacing:.3px}
+        .required{color:var(--error);font-weight:700}
+        .form-input{
+            width:100%;padding:.8rem 1rem;font-size:.95rem;
+            border:2px solid var(--gray-200);border-radius:var(--radius-md);
+            background:var(--gray-50);transition:var(--transition);color:var(--gray-900);font-weight:500;
+        }
+        .form-input:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(0,132,212,.1)}
+        .form-input::placeholder{color:var(--gray-400)}
+        .form-help{font-size:.72rem;color:var(--gray-500);margin-top:.3rem;display:block}
+        .form-error{font-size:.78rem;color:var(--error);margin-top:.3rem;display:block;min-height:1.1rem;animation:slideIn .2s ease-out}
+
+        @keyframes slideIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+        /* ── Buttons ── */
+        .button-primary{
+            width:100%;padding:.9rem 1.25rem;
+            background:linear-gradient(135deg,var(--accent) 0%,var(--primary) 100%);
+            color:#fff;border:none;border-radius:var(--radius-md);
+            font-size:.95rem;font-weight:600;letter-spacing:.4px;cursor:pointer;
+            transition:var(--transition);box-shadow:var(--shadow-md);
+            margin-top:.75rem;display:flex;align-items:center;justify-content:center;gap:.6rem;
+            position:relative;overflow:hidden;
+        }
+        .button-primary::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,.25);transform:translate(-50%,-50%);transition:width .5s,height .5s}
+        .button-primary:hover::before{width:300px;height:300px}
+        .button-primary:hover{transform:translateY(-2px);box-shadow:0 10px 20px rgba(26,58,82,.3)}
+        .button-primary:active{transform:translateY(0)}
+        .button-primary:disabled{background:var(--gray-400);cursor:not-allowed;transform:none;opacity:.6}
+        .button-secondary{
+            width:100%;padding:.875rem 1.25rem;background:var(--gray-100);
+            color:var(--primary);border:2px solid var(--gray-200);border-radius:var(--radius-md);
+            font-size:.95rem;font-weight:600;cursor:pointer;transition:var(--transition);margin-top:.75rem;
+        }
+        .button-secondary:hover{background:var(--gray-50);border-color:var(--accent);color:var(--accent)}
+
+        /* ── Status panel ── */
+        .info-panel{background:var(--gray-50);border-left:4px solid var(--accent);border-radius:var(--radius-md);padding:1rem 1.125rem;margin-top:1.25rem;animation:slideIn .3s ease-out}
+        .info-panel.success{background:rgba(16,185,129,.05);border-left-color:var(--success)}
+        .info-panel.error{background:rgba(239,68,68,.05);border-left-color:var(--error)}
+        .info-panel.warning{background:rgba(245,158,11,.05);border-left-color:var(--warning)}
+        .panel-title{font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--gray-600);margin-bottom:.35rem}
+        .panel-content{font-size:.9rem;color:var(--gray-700);line-height:1.55;word-break:break-word}
+        .panel-content strong{color:var(--gray-900);font-weight:600}
+        .session-badge{display:inline-block;background:linear-gradient(135deg,var(--success) 0%,#059669 100%);color:#fff;padding:.35rem .8rem;border-radius:var(--radius-sm);font-size:.75rem;font-weight:600;margin-top:.5rem}
+
+        /* ── Divider ── */
+        .section-divider{height:1px;background:var(--gray-200);margin:1.5rem 0}
+
+        /* ── Spinner ── */
+        .loading-spinner{display:inline-block;width:1rem;height:1rem;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        .hidden{display:none!important}
+
+        /* ── Face capture section ── */
+        .face-preview-wrapper{
+            position:relative;background:#000;border-radius:12px;overflow:hidden;
+            width:100%;aspect-ratio:3/4;max-height:320px;
+        }
+        .face-preview-wrapper video{
+            width:100%;height:100%;object-fit:cover;display:block;
+            transform:scaleX(-1); /* mirror selfie */
+        }
+        /* dark vignette + oval cutout */
+        .face-oval{
+            position:absolute;inset:0;
+            background:rgba(0,0,0,.5);
+            -webkit-mask:
+                radial-gradient(ellipse 56% 70% at 50% 44%,transparent 98%,black 100%);
+            mask:
+                radial-gradient(ellipse 56% 70% at 50% 44%,transparent 98%,black 100%);
+            pointer-events:none;
+        }
+        /* oval border ring */
+        .face-oval-ring{
+            position:absolute;top:50%;left:50%;
+            transform:translate(-50%,-46%);
+            width:56%;aspect-ratio:3/4;
+            border:2.5px solid rgba(255,255,255,.85);
+            border-radius:50%;
+            pointer-events:none;
+            transition:border-color .3s;
+        }
+        .face-oval-ring.detected{border-color:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.4)}
+        .face-status{
+            position:absolute;bottom:12px;left:0;right:0;text-align:center;
+            color:#fff;font-size:.8rem;font-weight:500;
+            text-shadow:0 1px 3px rgba(0,0,0,.7);
+        }
+        .face-guide-row{display:flex;align-items:center;gap:10px;margin:.85rem 0 .5rem;padding:.75rem 1rem;background:var(--gray-50);border-radius:var(--radius-md);border-left:4px solid var(--accent)}
+        .face-guide-row span{font-size:.82rem;color:var(--gray-600);line-height:1.4}
+
+        /* model load progress */
+        .model-progress{font-size:.78rem;color:var(--gray-500);text-align:center;margin:.5rem 0;min-height:1rem}
+
+        @media(max-width:640px){
+            .card-header{padding:2rem 1.25rem 1.25rem}
+            .card-header h1{font-size:1.4rem}
+            .card-body{padding:1.5rem 1.25rem}
+        }
+        @media(prefers-reduced-motion:reduce){
+            *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+<div class="card">
+
+    <!-- ══ Card header ══ -->
+    <div class="card-header">
+        <h1>Attendance Registration</h1>
+        <p>Secure access verification and student registration</p>
+        <div class="stepper">
+            <div class="step-pill active" id="pill-0"></div>
+            <div class="step-pill upcoming" id="pill-1"></div>
+            <div class="step-pill upcoming" id="pill-2"></div>
+        </div>
+    </div>
+
+    <!-- ══ Card body ══ -->
+    <div class="card-body">
+
+        <!-- ── Step 0: PIN ── -->
+        <section id="pinSection">
+            <div class="step-header">
+                <div class="step-icon">🔒</div>
+                <div class="step-title">
+                    <h3>Enter Session PIN</h3>
+                    <p>Secure access verification</p>
+                </div>
+                <span class="step-counter">1 / 3</span>
+            </div>
+
+            <div class="form-group">
+                <label for="sessionPin">Session PIN <span class="required">*</span></label>
+                <input type="text" id="sessionPin" class="form-input"
+                    placeholder="000000" maxlength="6"
+                    inputmode="numeric" autocomplete="off"
+                    aria-describedby="pinHelp pinError" pattern="[0-9]{6}">
+                <span class="form-help" id="pinHelp">Enter the 6-digit PIN from your instructor</span>
+                <span class="form-error" id="pinError"></span>
+            </div>
+
+            <button class="button-primary" id="verifyPinBtn" type="button">
+                <span>Verify PIN</span>
+            </button>
+        </section>
+
+        <!-- ── Step 1: Face capture ── -->
+        <section id="faceSection" class="hidden">
+            <div class="step-header">
+                <div class="step-icon">📷</div>
+                <div class="step-title">
+                    <h3>Face Verification</h3>
+                    <p>Identity confirmation</p>
+                </div>
+                <span class="step-counter">2 / 3</span>
+            </div>
+
+            <!-- Photo preview — shows captured selfie -->
+            <div class="face-preview-wrapper" id="facePreviewWrapper">
+                <div id="facePlaceholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#9ca3af">
+                    <span style="font-size:3.5rem">📷</span>
+                    <p style="margin:0.5rem 0 0;font-size:0.85rem">Your photo will appear here</p>
+                </div>
+                <img id="facePreview" alt="Captured photo"
+                     style="display:none;width:100%;height:100%;object-fit:cover;border-radius:inherit">
+                <div class="face-status" id="faceStatus">Loading face models…</div>
+            </div>
+
+            <!-- Hidden file input — opens native Android camera (works on plain HTTP) -->
+            <input type="file" id="faceInput" accept="image/*" capture="user" style="display:none">
+
+            <!-- Model load progress -->
+            <div class="model-progress" id="modelProgress"></div>
+
+            <!-- Guide -->
+            <div class="face-guide-row">
+                <span>Tap <strong>Take Selfie</strong>. Hold your phone steady and look directly at the camera.</span>
+            </div>
+
+            <button class="button-primary" id="captureBtn" type="button" disabled>
+                <span>📸 Take Selfie</span>
+            </button>
+            <button class="button-secondary" id="backToPinBtn" type="button">← Back to PIN</button>
+        </section>
+
+        <!-- ── Step 2: Registration form ── -->
+        <section id="registrationSection" class="hidden">
+            <div class="step-header">
+                <div class="step-icon">👤</div>
+                <div class="step-title">
+                    <h3>Personal Details</h3>
+                    <p>Student information</p>
+                </div>
+                <span class="step-counter">3 / 3</span>
+            </div>
+
+            <!-- Session info badge (shown after PIN verified) -->
+            <div id="sessionPanel" class="info-panel success hidden">
+                <div class="panel-title">Session</div>
+                <div class="panel-content" id="sessionContent"></div>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <div class="form-group">
+                <label for="username">Full Name <span class="required">*</span></label>
+                <input type="text" id="username" class="form-input"
+                    placeholder="Enter your full name" autocomplete="off">
+                <span class="form-help">2–40 characters</span>
+                <span class="form-error" id="usernameError"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="matricule">Student ID <span class="required">*</span></label>
+                <input type="text" id="matricule" class="form-input"
+                    placeholder="e.g., STU20283020" autocomplete="off">
+                <span class="form-help">4–20 alphanumeric characters</span>
+                <span class="form-error" id="matriculeError"></span>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" id="email" class="form-input"
+                    placeholder="student@institution.edu" autocomplete="off">
+                <span class="form-help">Valid email address required</span>
+                <span class="form-error" id="emailError"></span>
+            </div>
+
+            <button class="button-primary" id="submitBtn" type="button">
+                <span>Register for Attendance</span>
+            </button>
+            <button class="button-secondary" id="backToFaceBtn" type="button">← Retake Photo</button>
+        </section>
+
+        <!-- ── Status panel (always visible) ── -->
+        <div id="statusPanel" class="info-panel">
+            <div class="panel-title">Status</div>
+            <div class="panel-content" id="statusContent">Initialising connection…</div>
+        </div>
+
+    </div><!-- /card-body -->
+</div><!-- /card -->
+</div><!-- /container -->
+
+<!-- face-api.js served locally — run node setup.js once on the lecturer's PC -->
+<script src="/lib/face-api.min.js" onerror="window._faceApiMissing=true"></script>
+
+
+
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════
+   FacePhotoManager
+   Uses <input type="file" capture="user"> — no HTTPS or getUserMedia needed.
+   face-api.js runs on the captured image after the native camera returns it.
+════════════════════════════════════════════════════════════ */
+class FacePhotoManager {
+    constructor({ statusEl, progressEl, previewEl, placeholderEl, fileInputEl, onCaptured }) {
+        this.statusEl      = statusEl;
+        this.progressEl    = progressEl;
+        this.previewEl     = previewEl;
+        this.placeholderEl = placeholderEl;
+        this.fileInputEl   = fileInputEl;
+        this.onCaptured    = onCaptured || (() => {});
+        this.descriptor    = null;
+        this.modelsLoaded  = false;
+    }
+
+    setStatus(msg)  { if (this.statusEl)   this.statusEl.textContent   = msg; }
+    setProgress(msg){ if (this.progressEl) this.progressEl.textContent = msg; }
+
+    async init() {
+        if (window._faceApiMissing || typeof faceapi === 'undefined') {
+            throw new Error(
+                'face-api.js failed to load. Run "node setup.js" on the server PC then restart.'
+            );
+        }
+        this.setProgress('Loading face detection model (1/3)...');
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+        this.setProgress('Loading landmark model (2/3)...');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+        this.setProgress('Loading recognition model (3/3)...');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+        this.modelsLoaded = true;
+        this.setProgress('');
+        this.setStatus('Ready - tap Take Selfie to begin.');
+        this.fileInputEl.addEventListener('change', e => this._onFileSelected(e));
+    }
+
+    triggerCapture() {
+        if (!this.modelsLoaded) { this.setStatus('Models still loading, please wait...'); return; }
+        this.fileInputEl.value = '';
+        this.fileInputEl.click();
+    }
+
+    async _onFileSelected(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        this.setStatus('Analysing photo...');
+
+        const imgUrl = URL.createObjectURL(file);
+        this.previewEl.src = imgUrl;
+        this.previewEl.style.display = 'block';
+        if (this.placeholderEl) this.placeholderEl.style.display = 'none';
+        await new Promise(res => { this.previewEl.onload = res; });
+
+        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.45 });
+        const detection = await faceapi
+            .detectSingleFace(this.previewEl, options)
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+        URL.revokeObjectURL(imgUrl);
+
+        if (!detection) {
+            this.setStatus('No face detected. Retake the photo - look directly at the camera.');
+            this.previewEl.style.display = 'none';
+            if (this.placeholderEl) this.placeholderEl.style.display = 'flex';
+            return;
+        }
+
+        this.descriptor = Array.from(detection.descriptor);
+        this.setStatus('Face captured - checking with server...');
+        this.onCaptured(this.descriptor);
+    }
+
+    stop() { /* no video stream to release */ }
+}
+
+
+/* ════════════════════════════════════════════════════════════
+   AttendanceRegistrationApp — 3-step flow
+════════════════════════════════════════════════════════════ */
+class AttendanceRegistrationApp {
+    constructor() {
+        this.sessionToken     = new URLSearchParams(window.location.search).get('s');
+        this.origin           = window.location.origin;   // e.g. http://192.168.137.1:5501
+        this.validatedSession = null;
+        this.currentPin       = '';
+        this.faceDescriptor   = null;
+        this.faceManager      = null;
+        this.currentStep      = 0;
+
+        this._bindElements();
+        this._bindListeners();
+        this._initApp();
+    }
+
+    _bindElements() {
+        this.el = {
+            // Stepper pills
+            pills: [0,1,2].map(i => document.getElementById(`pill-${i}`)),
+
+            // Step 0 – PIN
+            pinSection:   document.getElementById('pinSection'),
+            sessionPin:   document.getElementById('sessionPin'),
+            verifyPinBtn: document.getElementById('verifyPinBtn'),
+            pinError:     document.getElementById('pinError'),
+
+            // Step 1 – Face
+            faceSection:  document.getElementById('faceSection'),
+            faceInput:    document.getElementById('faceInput'),
+            facePreview:  document.getElementById('facePreview'),
+            facePlaceholder: document.getElementById('facePlaceholder'),
+            modelProgress:document.getElementById('modelProgress'),
+            captureBtn:   document.getElementById('captureBtn'),
+            backToPinBtn: document.getElementById('backToPinBtn'),
+
+            // Step 2 – Form
+            registrationSection: document.getElementById('registrationSection'),
+            sessionPanel:   document.getElementById('sessionPanel'),
+            sessionContent: document.getElementById('sessionContent'),
+            username:       document.getElementById('username'),
+            matricule:      document.getElementById('matricule'),
+            email:          document.getElementById('email'),
+            submitBtn:      document.getElementById('submitBtn'),
+            backToFaceBtn:  document.getElementById('backToFaceBtn'),
+
+            // Status
+            statusPanel:   document.getElementById('statusPanel'),
+            statusContent: document.getElementById('statusContent'),
+            usernameError: document.getElementById('usernameError'),
+            matriculeError:document.getElementById('matriculeError'),
+            emailError:    document.getElementById('emailError'),
+        };
+    }
+
+    _bindListeners() {
+        this.el.verifyPinBtn.addEventListener('click',  () => this._handleVerifyPin());
+        this.el.sessionPin.addEventListener('keypress', e => { if (e.key === 'Enter') this._handleVerifyPin(); });
+        this.el.captureBtn.addEventListener('click',    () => this._handleCapture());
+        this.el.backToPinBtn.addEventListener('click',  () => this._goToStep(0));
+        this.el.backToFaceBtn.addEventListener('click', () => this._goToStep(1));
+        this.el.submitBtn.addEventListener('click',     () => this._handleSubmit());
+
+        // Strip any non-digit characters the Android keyboard might inject
+        // (some keyboards add spaces, dots, or Unicode digits on numeric mode)
+        this.el.sessionPin.addEventListener('input', () => {
+            const cleaned = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 6);
+            if (this.el.sessionPin.value !== cleaned) this.el.sessionPin.value = cleaned;
+        });
+    }
+
+    async _initApp() {
+        await this._checkServer();
+        if (this.sessionToken) await this._handleTokenMode();
+    }
+
+    async _checkServer() {
+        this._status(`Connecting to ${this.origin} …`, 'info');
+        try {
+            const r = await fetch(`/ping?t=${Date.now()}`);
+            if (r.ok) {
+                this._status(`Connected ✓  ${this.origin}`, 'success');
+            } else {
+                this._status(
+                    `Server returned HTTP ${r.status} from ${this.origin}/ping — restart the server.`,
+                    'error'
+                );
+            }
+        } catch (e) {
+            this._status(
+                `Cannot reach ${this.origin}/ping — ${e.message}. ` +
+                `Check: phone is on the lecturer's Wi-Fi hotspot AND node server.js is running.`,
+                'error'
+            );
+        }
+    }
+
+    /* ── Step 0: PIN verification ── */
+
+    async _handleVerifyPin() {
+        // Strip and re-validate in case the input listener was bypassed (paste, autofill)
+        const pin = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 6);
+        this.el.sessionPin.value = pin;
+        this.el.pinError.textContent = '';
+
+        if (pin.length !== 6) {
+            this.el.pinError.textContent = `Enter a valid 6-digit PIN (got ${pin.length} digit${pin.length === 1 ? '' : 's'})`;
+            return;
+        }
+
+        this._status(`Sending PIN to ${this.origin}/api/validate-pin …`, 'info');
+        this._btnLoading(this.el.verifyPinBtn, true, 'verifyPin');
+
+        try {
+            const r = await fetch('/api/validate-pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin }),
+            });
+
+            if (r.ok) {
+                this.validatedSession = await r.json();
+                this.currentPin = pin;
+                this._status('PIN verified ✓ — preparing face recognition…', 'success');
+                this._goToStep(1);
+            } else {
+                const msg = await r.text();
+                this.el.pinError.textContent = 'Invalid or expired PIN';
+                this._status(`PIN rejected by server (HTTP ${r.status}): ${msg}`, 'error');
+            }
+        } catch (e) {
+            this.el.pinError.textContent = 'Connection error — check you are on the hotspot.';
+            this._status(
+                `POST ${this.origin}/api/validate-pin failed: ${e.message}. ` +
+                `Ensure phone is on the lecturer's Wi-Fi and server is running.`,
+                'error'
+            );
+        } finally {
+            this._btnLoading(this.el.verifyPinBtn, false, 'verifyPin');
+        }
+    }
+
+    /* -- Step 1: Face capture -- */
+
+    async _startFaceStep() {
+        this.el.captureBtn.disabled = true;
+        if (this.faceManager) { this.faceManager.stop(); this.faceManager = null; }
+
+        this.el.facePreview.style.display = 'none';
+        if (this.el.facePlaceholder) this.el.facePlaceholder.style.display = 'flex';
+
+        this.faceManager = new FacePhotoManager({
+            statusEl:      this.el.faceStatus,
+            progressEl:    this.el.modelProgress,
+            previewEl:     this.el.facePreview,
+            placeholderEl: this.el.facePlaceholder,
+            fileInputEl:   this.el.faceInput,
+            onCaptured:    (descriptor) => this._onFaceCaptured(descriptor),
+        });
+
+        try {
+            await this.faceManager.init();
+            this.el.captureBtn.disabled = false;
+        } catch (err) {
+            this._status('Face recognition error: ' + err.message, 'error');
+        }
+    }
+
+    _handleCapture() {
+        if (!this.faceManager) return;
+        this.el.captureBtn.disabled = true;
+        this.faceManager.triggerCapture();
+        // Re-enable after a tick so a second tap is possible if camera is dismissed
+        setTimeout(() => { this.el.captureBtn.disabled = false; }, 1500);
+    }
+
+    async _onFaceCaptured(descriptor) {
+        this.el.captureBtn.disabled = true;
+        this._status('Checking face against session...', 'info');
+
+        try {
+            const body = { descriptor };
+            if (this.currentPin)   body.pin          = this.currentPin;
+            if (this.sessionToken) body.sessionToken = this.sessionToken;
+
+            const r = await fetch('/api/verify-face', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            if (!r.ok) {
+                const msg = await r.text();
+                this._status('Face check error: ' + msg, 'error');
+                return;
+            }
+
+            const result = await r.json();
+            if (!result.unique) {
+                this._status(
+                    `This face is already registered under "${result.matchedName}". Proxy attendance is not allowed.`,
+                    'error'
+                );
+                this.el.captureBtn.disabled = false;
+                return;
+            }
+
+            this.faceDescriptor = descriptor;
+            this.faceManager.stop();
+            this._status('Face verified - fill in your details.', 'success');
+            this._goToStep(2);
+
+        } catch (e) {
+            this._status('Capture error: ' + e.message, 'error');
+        }
+    }
+
+
+    /* ── Step 2: Registration form ── */
+
+    async _handleSubmit() {
+        if (!this._validateForm()) {
+            this._status('Please fix the errors above.', 'error');
+            return;
+        }
+
+        this._btnLoading(this.el.submitBtn, true, 'submit');
+        this._status('Acquiring location…', 'info');
+
+        try {
+            const position = await this._getLocation();
+            await this._submitRegistration(position);
+        } catch (e) {
+            this._status(`Submission error: ${e.message}`, 'error');
+        } finally {
+            this._btnLoading(this.el.submitBtn, false, 'submit');
+        }
+    }
+
+    _getLocation() {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) return resolve(null);
+            navigator.geolocation.getCurrentPosition(
+                pos => resolve(pos),
+                ()  => resolve(null),
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            );
+        });
+    }
+
+    async _submitRegistration(position) {
+        const payload = {
+            username:  this.el.username.value.trim(),
+            matricule: this.el.matricule.value.trim(),
+            email:     this.el.email.value.trim(),
+        };
+
+        if (position) {
+            payload.latitude  = position.coords.latitude;
+            payload.longitude = position.coords.longitude;
+        }
+
+        // Attach face descriptor (stored from step 1)
+        if (this.faceDescriptor) payload.descriptor = this.faceDescriptor;
+
+        // Session credentials
+        if (this.sessionToken) payload.sessionToken = this.sessionToken;
+        else                   payload.sessionPin   = this.currentPin;
+
+        this._status('Submitting registration…', 'info');
+
+        const r = await fetch('/api/biometric-connect', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+        });
+
+        const text = await r.text();
+        if (r.ok) {
+            this._status(`✓ ${text}`, 'success');
+            this._clearForm();
+            this._scheduleReset();
+        } else {
+            this._status(`Server error (${r.status}): ${text}`, 'error');
+        }
+    }
+
+    /* ── Step navigation ── */
+
+    _goToStep(step) {
+        // Stop camera if leaving face step
+        if (this.currentStep === 1 && step !== 1 && this.faceManager) {
+            // Only stop detection loop; keep stream if going back
+            if (step !== 1) { this.faceManager.stop(); this.faceManager = null; }
+        }
+
+        this.currentStep = step;
+
+        this.el.pinSection.classList.toggle('hidden',          step !== 0);
+        this.el.faceSection.classList.toggle('hidden',         step !== 1);
+        this.el.registrationSection.classList.toggle('hidden', step !== 2);
+
+        // Update stepper pills
+        this.el.pills.forEach((pill, i) => {
+            pill.className = 'step-pill ' + (i < step ? 'done' : i === step ? 'active' : 'upcoming');
+        });
+
+        if (step === 1) this._startFaceStep();
+        if (step === 2) this._showSessionBadge();
+    }
+
+    _showSessionBadge() {
+        if (!this.validatedSession) return;
+        const { courseName, courseCode, lecturerName } = this.validatedSession;
+        this.el.sessionContent.innerHTML = `
+            <strong>${courseName || 'Course'}</strong> ${courseCode ? `(${courseCode})` : ''}
+            <br>Instructor: ${lecturerName || 'Instructor'}
+            <div class="session-badge">Face Verified ✓</div>`;
+        this.el.sessionPanel.classList.remove('hidden');
+    }
+
+    /* ── Token mode (QR code path — skips PIN, starts at face) ── */
+
+    async _handleTokenMode() {
+        this._status('QR token detected — fetching session details…', 'info');
+        try {
+            const r = await fetch('/api/session-info?token=' + encodeURIComponent(this.sessionToken));
+            if (r.ok) {
+                const data = await r.json();
+                this.validatedSession = {
+                    tokenMode:    true,
+                    courseName:   data.courseName   || 'Unknown Course',
+                    courseCode:   data.courseCode   || '',
+                    lecturerName: data.lecturerName || data.lecturerId || 'Instructor',
+                };
+            } else {
+                // Session not found on server yet — use placeholder but warn
+                this.validatedSession = { tokenMode: true, courseName: 'Session not found — ask instructor to reconnect' };
+                this._status('Could not fetch session info. Ensure the session is active.', 'error');
+                return;
+            }
+        } catch (e) {
+            this.validatedSession = { tokenMode: true, courseName: 'QR Code Session' };
+        }
+        this._status('Session confirmed. Complete face verification to register.', 'success');
+        this._goToStep(1);
+    }
+
+    /* ── Form validation ── */
+
+    _validateForm() {
+        const errs = {
+            username:  this._checkName(this.el.username.value),
+            matricule: this._checkMatricule(this.el.matricule.value),
+            email:     this._checkEmail(this.el.email.value),
+        };
+        this.el.usernameError.textContent  = errs.username;
+        this.el.matriculeError.textContent = errs.matricule;
+        this.el.emailError.textContent     = errs.email;
+        return !errs.username && !errs.matricule && !errs.email;
+    }
+
+    _checkName(v) {
+        const t = v.trim();
+        if (!t)           return 'Name is required';
+        if (t.length < 2) return 'At least 2 characters';
+        if (t.length > 40)return 'Maximum 40 characters';
+        if (!/^[a-zA-Z0-9\s_.-]+$/.test(t)) return 'Invalid characters';
+        return '';
+    }
+    _checkMatricule(v) {
+        const t = v.trim();
+        if (!t)            return 'Student ID is required';
+        if (t.length < 4)  return 'At least 4 characters';
+        if (t.length > 20) return 'Maximum 20 characters';
+        if (!/^[a-zA-Z0-9_-]+$/.test(t)) return 'Only letters, digits, _ and - allowed';
+        return '';
+    }
+    _checkEmail(v) {
+        const t = v.trim();
+        if (!t) return 'Email is required';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return 'Invalid email format';
+        return '';
+    }
+
+    /* ── Utilities ── */
+
+    _clearForm() {
+        this.el.username.value  = '';
+        this.el.matricule.value = '';
+        this.el.email.value     = '';
+        this.faceDescriptor = null;
+    }
+
+    _scheduleReset() {
+        if (!this.sessionToken) {
+            setTimeout(() => {
+                this.validatedSession = null;
+                this.currentPin = '';
+                this.el.sessionPin.value = '';
+                this.el.sessionPanel.classList.add('hidden');
+                this._goToStep(0);
+                this.el.sessionPin.focus();
+            }, 2500);
+        }
+    }
+
+    _status(msg, type = 'info') {
+        this.el.statusPanel.className = `info-panel ${type}`;
+        this.el.statusContent.textContent = msg;
+        // Scroll error messages into view so they're visible on small phone screens
+        if (type === 'error') {
+            this.el.statusPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    _btnLoading(btn, on, id) {
+        if (on) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span><span>Processing…</span>';
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = id === 'verifyPin'  ? '<span>Verify PIN</span>' :
+                            id === 'capture'    ? '<span>📸 Take Selfie</span>' :
+                                                  '<span>Register for Attendance</span>';
+        }
+    }
+}
+
+/* ── Boot ── */
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        new AttendanceRegistrationApp();
+    } catch (err) {
+        // Make the crash visible on the phone screen (no console access on mobile)
+        const panel   = document.getElementById('statusPanel');
+        const content = document.getElementById('statusContent');
+        if (panel)   panel.className          = 'info-panel error';
+        if (content) content.textContent      = `App failed to start: ${err.message}`;
+        if (panel)   panel.scrollIntoView();
+    }
+});
+</script>
+
+</body>
+</html>

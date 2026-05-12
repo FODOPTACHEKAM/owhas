@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../models/session.dart';
@@ -11,15 +10,25 @@ import '../services/api_service.dart';
 import '../services/file_service.dart';
 import '../services/network_discovery_service.dart';
 import '../services/signature_service.dart';
+import '../controllers/session_controller.dart';
+import '../controllers/report_controller.dart';
+import '../controllers/network_controller.dart';
+import '../services/face_recognition_service.dart';
+import '../services/server_config.dart';
 
 /// Provider for attendance system state management
 class AttendanceProvider extends ChangeNotifier {
   final SessionService _sessionService = SessionService();
   final StorageService _storage = StorageService();
   final ExcelService _excelService = ExcelService();
+  final PdfService _pdfService = PdfService();
   final ApiService _apiService = ApiService();
   final FileService _fileService = FileService();
   final NetworkDiscoveryService _networkDiscovery = NetworkDiscoveryService();
+
+  late final SessionController _sessionController;
+  late final ReportController _reportController;
+  late final NetworkController _networkController;
 
   AttendanceSession? _activeSession;
   List<AttendanceRecord> _currentRecords = [];
@@ -27,6 +36,7 @@ class AttendanceProvider extends ChangeNotifier {
   Map<String, dynamic> _serverStats = {};
   bool _isLoading = false;
   String? _error;
+  String? _serverWarning;
   int _activeWifiDevices = 0;
   List<String> _wifiDeviceIps = [];
   int _sessionNumber = 1;
@@ -37,12 +47,17 @@ class AttendanceProvider extends ChangeNotifier {
   Map<String, dynamic> get serverStats => _serverStats;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  String? get serverWarning => _serverWarning;
   int get activeWifiDevices => _activeWifiDevices;
   List<String> get wifiDeviceIps => _wifiDeviceIps;
   int get sessionNumber => _sessionNumber;
 
   /// Initialize the provider
   Future<void> initialize() async {
+    _sessionController = SessionControllerImpl(_sessionService, _storage, _apiService);
+    _reportController = ReportControllerImpl(_excelService, _pdfService, _fileService);
+    _networkController = NetworkControllerImpl(_apiService, _networkDiscovery);
+
     _isLoading = true;
     notifyListeners();
 
@@ -96,10 +111,9 @@ class AttendanceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _activeSession = await _sessionService.createSession(
+      _activeSession = await _sessionController.createSession(
         courseName: courseName,
         courseCode: courseCode,
-        lecturerId: 'lecturer_1', // In a real app, get from auth
         lecturerName: lecturerName,
         gracePeriodMinutes: gracePeriodMinutes,
         requiredConnectionMinutes: requiredConnectionMinutes,
@@ -109,11 +123,12 @@ class AttendanceProvider extends ChangeNotifier {
       );
       _currentRecords = [];
       _error = null;
+      _serverWarning = null;
 
       // Sync PIN/token to API service
       _syncApiServiceSession();
 
-      // Push session config to server (best-effort; don't fail if offline)
+      // Push session config to server and use the result as a reachability check
       try {
         await _apiService.pushSessionConfig(
           requiredConnectionMinutes: requiredConnectionMinutes,
@@ -121,6 +136,10 @@ class AttendanceProvider extends ChangeNotifier {
         );
       } catch (e) {
         debugPrint('Server config push failed (offline?): $e');
+        _serverWarning =
+            'Server not reachable — web registration (hotspot.html) is unavailable. '
+            'Start node server.js on the PC and connect phones to the same Wi-Fi. '
+            'Use the Retry button in the dashboard to reconnect.';
       }
     } catch (e) {
       _error = e.toString();
@@ -327,33 +346,90 @@ class AttendanceProvider extends ChangeNotifier {
     if (_activeSession == null) return null;
 
     _isLoading = true;
+    _error = null;
     notifyListeners();
 
+    // 1. Try to generate the report — best-effort, never blocks session end
+    String? filePath;
     try {
-      final filePath = await _excelService.generateReport(
+      filePath = await _excelService.generateReport(
         courseName: _activeSession!.courseName,
         sessionDate: _activeSession!.startTime,
         currentSessionRecords: _currentRecords,
         previousAttendance: _previousAttendance,
         maxAttendanceCount: _activeSession!.maxAttendanceCount,
       );
-
-      await _sessionService.endSession(_activeSession!.id);
-      _apiService.clearSession();
-      _activeSession = null;
-      _currentRecords = [];
-      _serverStats = {};
-      _error = null;
-
-      _isLoading = false;
-      notifyListeners();
-
-      return filePath;
     } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
+      debugPrint('Report generation failed (session will still end): $e');
+    }
+
+    // 2. Always end the session — clears server, local storage, face data, API state
+    await _cleanupSession();
+
+    return filePath;
+  }
+
+  /// End the session immediately with no report — used for auto-expiry.
+  Future<void> forceEndSession() async {
+    if (_activeSession == null) return;
+    await _cleanupSession();
+  }
+
+  /// Internal teardown shared by both end paths.
+  Future<void> _cleanupSession() async {
+    if (_activeSession == null) return;
+
+    final endedSessionId = _activeSession!.id;
+
+    try {
+      await _sessionService.endSession(endedSessionId);
+    } catch (e) {
+      debugPrint('Session service end error: $e');
+    }
+
+    // Wipe all persisted data for this session from local storage
+    try {
+      await _storage.clearSessionData(endedSessionId);
+    } catch (e) {
+      debugPrint('Storage clear error: $e');
+    }
+
+    FaceRecognitionService().clearSession(endedSessionId);
+    _apiService.clearSession();
+    _activeSession = null;
+    _currentRecords = [];
+    _serverStats = {};
+    _previousAttendance = {};
+    _error = null;
+    _serverWarning = null;
+    _sessionNumber = 1;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Retry connecting to the server after a network change.
+  /// Resets server detection and re-pushes session config.
+  Future<void> retryServerConnection() async {
+    _serverWarning = null;
+    notifyListeners();
+
+    try {
+      ServerConfig().reset();
+      await ServerConfig().detect();
+      _syncApiServiceSession();
+      await _apiService.pushSessionConfig(
+        requiredConnectionMinutes: _activeSession?.requiredConnectionMinutes ?? 0,
+        gracePeriodMinutes: _activeSession?.gracePeriodMinutes ?? 0,
+      );
+      // Re-register the PIN so students can validate it via hotspot.html.
+      // This handles the case where the server was restarted (clearing
+      // in-memory sessions) or the original session-init failed offline.
+      await _sessionService.resyncToServer();
+    } catch (e) {
+      _serverWarning =
+          'Server still not reachable — ensure node server.js is running '
+          'and the phone is on the same Wi-Fi.';
       notifyListeners();
-      return null;
     }
   }
 
@@ -389,7 +465,7 @@ class AttendanceProvider extends ChangeNotifier {
 
       return pdfBytes;
     } catch (e) {
-      _error = 'PDF generation failed: \$e';
+      _error = 'PDF generation failed: $e';
       _isLoading = false;
       notifyListeners();
       return null;
@@ -408,9 +484,27 @@ class AttendanceProvider extends ChangeNotifier {
       await _fileService.saveAndSharePdf(pdfBytes, fileName: fileName);
       return true;
     } catch (e) {
-      _error = 'Failed to share PDF: \$e';
+      _error = 'Failed to share PDF: $e';
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Download PDF report to device storage
+  Future<String?> downloadPDFReport() async {
+    final pdfBytes = await generatePDFReport();
+    if (pdfBytes == null) return null;
+
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(_activeSession!.startTime);
+      final fileName =
+          '${_activeSession!.courseName.replaceAll(' ', '_')}_$dateStr.pdf';
+      final filePath = await _fileService.savePdfToDevice(pdfBytes, fileName: fileName);
+      return filePath;
+    } catch (e) {
+      _error = 'Failed to download PDF: $e';
+      notifyListeners();
+      return null;
     }
   }
 
@@ -485,8 +579,9 @@ class AttendanceProvider extends ChangeNotifier {
     try {
       final record = _currentRecords.firstWhere((r) => r.id == recordId);
 
-      // 1. Remove from local storage
+      // 1. Remove from local storage and face registry
       await _sessionService.removeStudent(_activeSession!.id, recordId);
+      FaceRecognitionService().removeFace(_activeSession!.id, record.matricule);
 
       // 2. Remove from server (best-effort)
       try {

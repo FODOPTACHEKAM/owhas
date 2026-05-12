@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ipconfig)",
+      "Bash(findstr /i \"IPv4\\\\|adapter\\\\|192.168\")",
+      "PowerShell(Get-NetFirewallProfile -Profile Public)"
+    ]
+  }
+}
