@@ -279,7 +279,19 @@ class _HomePageState extends State<HomePage>
                           );
                         },
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      const SizedBox(height: AppSpacing.xs),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => context.push('/catalogue'),
+                          icon: const Icon(Icons.menu_book_outlined, size: 15),
+                          label: const Text('View Course Catalogue'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF1A3A6B),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
                       _RoleCard(
                         title: 'Student',
                         subtitle: 'Register attendance for active sessions',

@@ -6,10 +6,11 @@ import 'package:share_plus/share_plus.dart';
 /// Service for saving files locally and triggering native share dialogs
 class FileService {
   /// Save PDF bytes to temporary storage and open the native share menu
-  Future<void> saveAndSharePdf(Uint8List bytes, {String fileName = 'attendance_report'}) async {
+  Future<void> saveAndSharePdf(Uint8List bytes, {String fileName = 'attendance_report.pdf'}) async {
     try {
       final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/$fileName.pdf';
+      final name = fileName.endsWith('.pdf') ? fileName : '$fileName.pdf';
+      final filePath = '${directory.path}/$name';
       final file = File(filePath);
 
       // Write bytes to local file
@@ -18,7 +19,6 @@ class FileService {
       // Trigger native share dialog
       await Share.shareXFiles(
         [XFile(filePath)],
-        text: 'Student Attendance List',
         subject: 'Attendance Report',
       );
     } catch (e) {
@@ -27,19 +27,16 @@ class FileService {
   }
 
   /// Save PDF bytes to device's Downloads folder (or Documents on iOS)
-  Future<String?> savePdfToDevice(Uint8List bytes, {String fileName = 'attendance_report'}) async {
+  Future<String?> savePdfToDevice(Uint8List bytes, {String fileName = 'attendance_report.pdf'}) async {
     try {
       Directory? directory;
 
       if (Platform.isAndroid) {
-        // For Android, try to use Downloads directory
         directory = Directory('/storage/emulated/0/Download');
         if (!await directory.exists()) {
-          // Fallback to app documents directory
           directory = await getExternalStorageDirectory();
         }
       } else {
-        // For iOS and other platforms, use documents directory
         directory = await getApplicationDocumentsDirectory();
       }
 
@@ -47,7 +44,8 @@ class FileService {
         throw Exception('Could not access storage directory');
       }
 
-      final filePath = '${directory.path}/$fileName.pdf';
+      final name = fileName.endsWith('.pdf') ? fileName : '$fileName.pdf';
+      final filePath = '${directory.path}/$name';
       final file = File(filePath);
 
       // Write bytes to local file

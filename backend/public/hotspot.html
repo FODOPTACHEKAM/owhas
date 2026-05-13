@@ -447,6 +447,7 @@ class AttendanceRegistrationApp {
         this.validatedSession = null;
         this.currentPin       = '';
         this.faceDescriptor   = null;
+        this.faceId           = null;  // one-time token issued by /api/verify-face
         this.faceManager      = null;
         this.currentStep      = 0;
 
@@ -647,8 +648,9 @@ class AttendanceRegistrationApp {
             }
 
             this.faceDescriptor = descriptor;
+            this.faceId         = result.faceId;  // one-time server token (valid 5 min)
             this.faceManager.stop();
-            this._status('Face verified - fill in your details.', 'success');
+            this._status('Face verified ✓ — fill in your details.', 'success');
             this._goToStep(2);
 
         } catch (e) {
@@ -701,8 +703,8 @@ class AttendanceRegistrationApp {
             payload.longitude = position.coords.longitude;
         }
 
-        // Attach face descriptor (stored from step 1)
-        if (this.faceDescriptor) payload.descriptor = this.faceDescriptor;
+        // Attach the one-time face token issued by /api/verify-face
+        if (this.faceId) payload.faceId = this.faceId;
 
         // Session credentials
         if (this.sessionToken) payload.sessionToken = this.sessionToken;
@@ -731,9 +733,10 @@ class AttendanceRegistrationApp {
     _goToStep(step) {
         // Stop camera if leaving face step
         if (this.currentStep === 1 && step !== 1 && this.faceManager) {
-            // Only stop detection loop; keep stream if going back
-            if (step !== 1) { this.faceManager.stop(); this.faceManager = null; }
+            this.faceManager.stop(); this.faceManager = null;
         }
+        // Going back to PIN step: discard face token so it can't be reused
+        if (step === 0) { this.faceId = null; this.faceDescriptor = null; }
 
         this.currentStep = step;
 
@@ -831,6 +834,7 @@ class AttendanceRegistrationApp {
         this.el.matricule.value = '';
         this.el.email.value     = '';
         this.faceDescriptor = null;
+        this.faceId         = null;  // invalidate the used token
     }
 
     _scheduleReset() {
