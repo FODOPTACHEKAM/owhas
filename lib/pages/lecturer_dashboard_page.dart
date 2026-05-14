@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +19,7 @@ class LecturerDashboardPage extends StatefulWidget {
 class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
   bool _isEndingSession = false;
   int _qrRefreshKey = 0;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -25,15 +27,27 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
     _startAutoRefresh();
   }
 
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
   void _startAutoRefresh() {
-    Future.delayed(const Duration(seconds: 5), () async {
-      if (!mounted) return;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted) {
+        _refreshTimer?.cancel();
+        return;
+      }
 
       final provider = context.read<AttendanceProvider>();
       final session = provider.activeSession;
 
-      // Check if the session has expired
-      if (session != null && session.endTime != null && DateTime.now().isAfter(session.endTime!)) {
+      if (session != null &&
+          session.endTime != null &&
+          DateTime.now().isAfter(session.endTime!)) {
+        _refreshTimer?.cancel();
         await provider.forceEndSession();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -47,9 +61,11 @@ class _LecturerDashboardPageState extends State<LecturerDashboardPage> {
         return;
       }
 
-      provider.refreshRecords();
-      provider.refreshWifiDeviceCount();
-      _startAutoRefresh();
+      // Refresh records and Wi-Fi count in parallel
+      await Future.wait([
+        provider.refreshRecords(),
+        provider.refreshWifiDeviceCount(),
+      ]);
     });
   }
 

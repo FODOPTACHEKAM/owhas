@@ -1,12 +1,28 @@
 ﻿const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 const { exec, execSync } = require('child_process');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const { generateAttendancePDF } = require('./src/services/pdfService');
+const dgram = require('dgram');
+const http  = require('http');
+const { randomUUID } = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+// ====== Rate limiting — prevent brute-force PIN guessing ======
+const pinLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,  // 5-minute window
+    max: 10,                   // 10 attempts per IP per window
+    message: { error: 'Too many PIN attempts. Please wait 5 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/validate-pin', pinLimiter);
+app.use('/api/biometric-connect', pinLimiter);
 
 // ====== HARDCODED SERVER CONFIG ======
 const PORT = 5501; // same port for both HTTP and HTTPS
@@ -94,6 +110,39 @@ app.get('/api/qr-url', (req, res) => {
 // ====== In-memory PIN-scoped session storage ======
 const activeSessions = new Map();
 
+// ====== Session persistence (survives server restart / crash) ======
+const SESSION_FILE = path.join(__dirname, 'sessions.json');
+
+function persistSessions() {
+    try {
+        const obj = {};
+        for (const [pin, s] of activeSessions.entries()) {
+            // pendingFaces is a Map and cannot be serialised — it is transient
+            const { pendingFaces, ...rest } = s;
+            obj[pin] = rest;
+        }
+        fs.writeFileSync(SESSION_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        console.error('[PERSIST] Failed to save sessions:', e.message);
+    }
+}
+
+// Restore unexpired sessions on startup
+if (fs.existsSync(SESSION_FILE)) {
+    try {
+        const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+        for (const [pin, s] of Object.entries(saved)) {
+            if (new Date() < new Date(s.expiresAt)) {
+                s.pendingFaces = new Map();
+                activeSessions.set(pin, s);
+                console.log(`[RESTORE] Restored session PIN ${pin} (${s.courseName})`);
+            }
+        }
+    } catch (e) {
+        console.error('[RESTORE] Failed to restore sessions:', e.message);
+    }
+}
+
 let sessionConfig = {
     requiredConnectionMinutes: 15,
     gracePeriodMinutes: 5,
@@ -152,8 +201,8 @@ const upload = multer({
 app.post('/api/session-init', (req, res) => {
     const { courseName, courseCode, lecturerId, lecturerName, pin, sessionToken, durationMinutes, latitude, longitude } = req.body;
 
-    if (!pin || !/^\d{6}$/.test(pin)) {
-        return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    if (!pin || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: 'A valid 4-digit PIN is required.' });
     }
     // Evict the PIN if it belongs to an already-expired session before collision check.
     // activeSessions.has() would otherwise return true for stale entries.
@@ -175,14 +224,16 @@ app.post('/api/session-init', (req, res) => {
         lecturerName: lecturerName || lecturerId || 'Unknown Lecturer',
         sessionToken: sessionToken || null,
         targetLocation: targetLocation,
-        attendees: [],
-        faceDescriptors: [], // { matricule, name, descriptor: Float32[128] }
+        attendees:       [],
+        faceDescriptors: [],   // { faceId, matricule, name, descriptor: Float32[128], registeredAt }
+        pendingFaces:    new Map(), // faceId → { descriptor, reservedAt, used }
         createdAt: new Date(),
         expiresAt: expiresAt,
     });
 
     const geoLog = targetLocation ? `(GPS: ${targetLocation.latitude}, ${targetLocation.longitude})` : '(No GPS)';
     console.log(`[SESSION-INIT] PIN ${pin} activated for ${courseName || 'Untitled'} ${geoLog} (expires ${expiresAt.toISOString()})`);
+    persistSessions();
     res.json({ success: true, pin, message: 'Session activated with PIN ' + pin });
 });
 
@@ -227,6 +278,7 @@ app.post('/api/end-session', (req, res) => {
     }
     const attendeeCount = session.attendees.length;
     activeSessions.delete(pin);
+    persistSessions();
     console.log(`[SESSION-END] PIN ${pin} deactivated. ${attendeeCount} attendee(s) recorded.`);
     res.json({ success: true, message: `Session ended. ${attendeeCount} attendee(s) recorded.`, attendeeCount });
 });
@@ -367,7 +419,7 @@ app.post('/connect', (req, res) => {
     let session = null;
     let pin = sessionPin;
 
-    if (pin && /^\d{6}$/.test(pin)) {
+    if (pin && /^\d{4}$/.test(pin)) {
         session = getSessionByPin(pin);
     } else if (sessionToken) {
         for (const [p, s] of activeSessions.entries()) {
@@ -409,8 +461,10 @@ app.get('/connect', (req, res) => {
 });
 
 // ====== POST /api/verify-face ======
-// Checks a 128-dim face descriptor against all faces registered in the session.
-// Returns { unique: true } or { unique: false, matchedName: '...' }
+// Step 1 of 2 for student registration.
+// Compares the submitted 128-dim descriptor against every face already stored
+// in the session. If unique, generates a one-time faceId token (valid 5 min)
+// and returns it to the client. The token must be presented at /api/biometric-connect.
 app.post('/api/verify-face', (req, res) => {
     const { pin, sessionToken, descriptor } = req.body;
     const session = getSessionByPinOrToken(pin, sessionToken);
@@ -420,31 +474,36 @@ app.post('/api/verify-face', (req, res) => {
         return res.status(400).json({ error: 'descriptor must be a 128-element numeric array' });
     }
 
-    const THRESHOLD = 0.6; // face-api.js recommended distance threshold
-    for (const entry of (session.faceDescriptors || [])) {
+    const THRESHOLD = 0.6;
+    for (const entry of session.faceDescriptors) {
         if (faceDistance(descriptor, entry.descriptor) < THRESHOLD) {
             return res.json({ unique: false, matchedName: entry.name });
         }
     }
-    res.json({ unique: true });
+
+    // Face is unique — issue a one-time token valid for 5 minutes
+    const faceId = randomUUID();
+    session.pendingFaces.set(faceId, { descriptor, reservedAt: new Date(), used: false });
+    res.json({ unique: true, faceId });
 });
 
 // ====== POST /api/biometric-connect ======
-// hotspot.html student registration path (with face descriptor).
+// Step 2 of 2. Validates the faceId token issued by /api/verify-face,
+// re-checks uniqueness to close the race-condition window, then commits
+// the student to the session permanently.
 app.post('/api/biometric-connect', (req, res) => {
-    const { username, matricule, email, sessionPin, sessionToken, descriptor, latitude, longitude } = req.body;
+    const { username, matricule, email, sessionPin, sessionToken, faceId, latitude, longitude } = req.body;
     const studentIP = req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress;
 
-    if (!username || !matricule || !email) {
-        return res.status(400).send("All fields are required.");
-    }
-    if (username.length > 100 || matricule.length > 30 || email.length > 150) {
-        return res.status(400).send("Invalid input length.");
-    }
+    if (!username || !matricule || !email)
+        return res.status(400).send('All fields are required.');
+    if (username.length > 100 || matricule.length > 30 || email.length > 150)
+        return res.status(400).send('Invalid input length.');
+    if (!faceId)
+        return res.status(403).send('Face verification required. Please complete the face scan first.');
 
-    let session = null;
-    let pin = sessionPin;
-    if (pin && /^\d{6}$/.test(pin)) session = getSessionByPin(pin);
+    let session = null, pin = sessionPin;
+    if (pin && /^\d{4}$/.test(pin)) session = getSessionByPin(pin);
     if (!session && sessionToken) {
         for (const [p, s] of activeSessions.entries()) {
             if (s.sessionToken === sessionToken) { session = s; pin = p; break; }
@@ -454,37 +513,76 @@ app.post('/api/biometric-connect', (req, res) => {
         const entry = Array.from(activeSessions.entries())[0];
         session = entry[1]; pin = entry[0];
     }
-    if (!session) return res.status(400).send("A valid Session PIN is required.");
+    if (!session) return res.status(400).send('Session not found.');
 
+    // ── Validate the one-time face token ──────────────────────────────────────
+    const pending = session.pendingFaces.get(faceId);
+    if (!pending)
+        return res.status(403).send('Face verification not found. Please redo the face scan.');
+    if (pending.used)
+        return res.status(403).send('Face token already used. Please redo the face scan.');
+    if (Date.now() - pending.reservedAt.getTime() > 5 * 60 * 1000)
+        return res.status(403).send('Face verification expired (5-minute limit). Please redo the face scan.');
+
+    // ── Race-condition guard: re-check uniqueness at commit time ──────────────
+    const THRESHOLD = 0.6;
+    for (const entry of session.faceDescriptors) {
+        if (faceDistance(pending.descriptor, entry.descriptor) < THRESHOLD)
+            return res.status(403).send(`Duplicate face detected — already registered as "${entry.name}". Proxy attendance is not allowed.`);
+    }
+
+    // ── Matricule duplicate check ─────────────────────────────────────────────
+    if (session.attendees.find(a => a.matricule === matricule))
+        return res.status(200).send('You are already registered for this session.');
+
+    // ── GPS geofence ──────────────────────────────────────────────────────────
     if (session.targetLocation) {
-        if (latitude === undefined || longitude === undefined) {
-            return res.status(403).send("This session requires GPS location.");
-        }
-        const dist = calculateDistance(session.targetLocation.latitude, session.targetLocation.longitude, parseFloat(latitude), parseFloat(longitude));
-        if (dist === null || isNaN(dist)) return res.status(400).send("Invalid GPS coordinates.");
-        if (dist > 50) return res.status(403).send(`Geofence Error: You are ${dist.toFixed(0)}m away.`);
+        if (latitude === undefined || longitude === undefined)
+            return res.status(403).send('This session requires GPS location to be enabled.');
+        const dist = calculateDistance(
+            session.targetLocation.latitude, session.targetLocation.longitude,
+            parseFloat(latitude), parseFloat(longitude)
+        );
+        if (dist === null || isNaN(dist)) return res.status(400).send('Invalid GPS coordinates.');
+        if (dist > 50) return res.status(403).send(`Geofence: you are ${dist.toFixed(0)} m from the classroom.`);
     }
 
-    const existingEntry = session.attendees.find(a => a.ip === studentIP);
-    if (existingEntry) {
-        if (existingEntry.username !== username || existingEntry.matricule !== matricule) {
-            return res.status(403).send("Error: This device is already registered under a different name.");
-        }
-        return res.status(200).send("You are already securely registered for this session!");
-    }
+    // ── Commit ────────────────────────────────────────────────────────────────
+    pending.used = true; // consume the token (single-use)
 
-    // Store face descriptor for duplicate detection in future registrations
-    if (Array.isArray(descriptor) && descriptor.length === 128) {
-        if (!session.faceDescriptors) session.faceDescriptors = [];
-        if (!session.faceDescriptors.find(f => f.matricule === matricule)) {
-            session.faceDescriptors.push({ matricule, name: username, descriptor });
-        }
-    }
+    session.faceDescriptors.push({
+        faceId,
+        matricule,
+        name:         username,
+        descriptor:   pending.descriptor,
+        registeredAt: new Date().toISOString(),
+    });
 
-    session.attendees.push({ username, matricule, email, ip: studentIP, faceVerified: true, connectedAt: new Date().toISOString(), time: new Date().toLocaleString() });
-    console.log(`[SUCCESS-FACE] Registered: ${username} (${matricule}) from ${studentIP} into PIN ${pin}`);
+    session.attendees.push({
+        username,
+        matricule,
+        email,
+        ip:           studentIP,
+        faceId,
+        faceVerified: true,
+        connectedAt:  new Date().toISOString(),
+        time:         new Date().toLocaleString(),
+    });
+
+    console.log(`[FACE-OK] ${username} (${matricule}) faceId=${faceId} PIN=${pin}`);
     res.status(200).send(`Successfully registered for ${session.courseName}!`);
 });
+
+// ── Periodic cleanup of expired/used pending face tokens ──────────────────────
+setInterval(() => {
+    const FIVE_MIN = 5 * 60 * 1000;
+    for (const session of activeSessions.values()) {
+        for (const [id, entry] of session.pendingFaces.entries()) {
+            if (entry.used || Date.now() - entry.reservedAt.getTime() > FIVE_MIN)
+                session.pendingFaces.delete(id);
+        }
+    }
+}, 60_000);
 
 // ====== GET /export ======
 app.get('/export', (req, res) => {
@@ -517,7 +615,7 @@ app.get('/api/attendees', (req, res) => {
 
 app.post('/api/reset', (req, res) => {
     const { courseName, courseCode, pin, lecturerId, durationMinutes } = req.body;
-    if (!pin || !/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    if (!pin || !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
     let session = activeSessions.get(pin);
     let previousCount = 0;
     if (session) {
@@ -669,16 +767,23 @@ function _logStartup(scheme, port) {
     });
     console.log('  ' + scheme + '://localhost:' + port + '/public/hotspot.html');
     console.log('----------------------------------------');
+    console.log('');
+    console.log('  *** STUDENT URL — type in Chrome (no DNS needed) ***');
+    console.log('  >>> http://' + detectedHotspotIP + '  <<<');
+    console.log('  Port 80 redirect opens the attendance page automatically.');
+    console.log('  Or use the QR code in the lecturer app (easiest).');
+    console.log('');
+    console.log('========================================');
 }
 
-function _addFirewallRule(port, label) {
+function _addFirewallRule(port, label, protocol = 'TCP') {
     if (process.platform !== 'win32') return;
     const cmds = [
         'netsh advfirewall firewall delete rule name="' + label + '"',
-        'netsh advfirewall firewall add rule name="' + label + '" dir=in action=allow protocol=TCP localport=' + port + ' profile=any',
+        'netsh advfirewall firewall add rule name="' + label + '" dir=in action=allow protocol=' + protocol + ' localport=' + port + ' profile=any',
     ].join(' && ');
     exec(cmds, (err) => {
-        if (!err) console.log('[FIREWALL] Port ' + port + ' inbound rule ensured (profile=any).');
+        if (!err) console.log('[FIREWALL] ' + protocol + ' port ' + port + ' inbound rule ensured (profile=any).');
         else       console.log('[FIREWALL] Could not auto-add rule for port ' + port + ' - run start-server.bat as Admin.');
     });
 }
@@ -691,9 +796,190 @@ function _openBrowser(url) {
 
 app.listen(PORT, '0.0.0.0', () => {
     _logStartup('http', PORT);
-    _addFirewallRule(PORT, 'OwHAS Attendance 5501');
+    _addFirewallRule(PORT, 'OwHAS Attendance 5501', 'TCP');
     _openBrowser('http://' + detectedHotspotIP + ':' + PORT + '/public/hotspot.html');
+    _startMdnsResponder(); // owhas.local — no port-53 conflicts
+    _startDnsServer();     // owhas.lan   — needs port 53 free (best-effort)
+    _startHttp80Redirect();
 });
+
+// ══════════════════════════════════════════════════════════════════
+//  mDNS RESPONDER  (primary — no port conflicts)
+//  Listens on 224.0.0.251:5353 and answers any query for owhas.local
+//  with detectedHotspotIP.  Works on Android 8+, iOS, Win10 without
+//  needing to touch port 53 or stop Dnscache at all.
+//  Students type: http://owhas.local
+// ══════════════════════════════════════════════════════════════════
+function _mdnsIsQueryForOwhas(buf) {
+    if (buf.length < 13) return false;
+    if (buf[2] & 0x80) return false; // ignore responses
+    const qdcount = (buf[4] << 8) | buf[5];
+    let pos = 12;
+    for (let q = 0; q < qdcount; q++) {
+        const labels = [];
+        while (pos < buf.length) {
+            const len = buf[pos];
+            if (len === 0) { pos++; break; }
+            if ((len & 0xC0) === 0xC0) { pos += 2; break; }
+            pos++;
+            if (pos + len > buf.length) return false;
+            labels.push(buf.slice(pos, pos + len).toString('ascii').toLowerCase());
+            pos += len;
+        }
+        pos += 4; // QTYPE + QCLASS
+        if (labels.length >= 2 &&
+            labels[labels.length - 1] === 'local' &&
+            labels[labels.length - 2] === 'owhas') return true;
+    }
+    return false;
+}
+
+function _startMdnsResponder() {
+    const MDNS_ADDR = '224.0.0.251';
+    const MDNS_PORT = 5353;
+    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+    sock.on('message', (msg, rinfo) => {
+        try {
+            if (!_mdnsIsQueryForOwhas(msg)) return;
+            const resp = _buildDnsResponse(msg, detectedHotspotIP);
+            // RFC 6762: respond multicast so the querier hears it on 224.0.0.251:5353
+            sock.send(resp, MDNS_PORT, MDNS_ADDR);
+        } catch (_) {}
+    });
+
+    sock.on('error', err => {
+        console.log('[mDNS] ' + err.code + ': ' + err.message);
+    });
+
+    sock.bind(MDNS_PORT, () => {
+        try {
+            sock.setMulticastTTL(255);
+            sock.addMembership(MDNS_ADDR, detectedHotspotIP);
+            console.log('[mDNS] Listening on 224.0.0.251:5353 — owhas.local → ' + detectedHotspotIP);
+            console.log('[mDNS] Students type: http://owhas.local  (Android 8+, iOS, Win10)');
+            _addFirewallRule(5353, 'OwHAS mDNS 5353', 'UDP');
+        } catch (e) {
+            console.log('[mDNS] Multicast join failed: ' + e.message);
+        }
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  LOCAL DNS SERVER  (secondary — requires port 53 to be free)
+//  Binds to the hotspot IP only (not 0.0.0.0) so the PC's own DNS
+//  resolver is unaffected.  Responds to every A-record query with
+//  detectedHotspotIP, making "owhas.lan" resolve for hotspot clients.
+// ══════════════════════════════════════════════════════════════════
+function _buildDnsResponse(queryBuf, ip) {
+    // Reserve space for original query + one A-record answer (16 bytes)
+    const resp = Buffer.alloc(queryBuf.length + 16);
+    queryBuf.copy(resp);
+
+    // Flags: QR=1 (response), AA=1 (authoritative), RD=1, RCODE=0
+    resp[2] = 0x85;
+    resp[3] = 0x00;
+    // ANCOUNT = 1
+    resp[6] = 0x00; resp[7] = 0x01;
+    // NSCOUNT = ARCOUNT = 0
+    resp[8] = 0x00; resp[9]  = 0x00;
+    resp[10]= 0x00; resp[11] = 0x00;
+
+    let o = queryBuf.length;
+    resp[o++] = 0xC0; resp[o++] = 0x0C; // name pointer → question section
+    resp[o++] = 0x00; resp[o++] = 0x01; // TYPE  A
+    resp[o++] = 0x00; resp[o++] = 0x01; // CLASS IN
+    resp[o++] = 0x00; resp[o++] = 0x00;
+    resp[o++] = 0x00; resp[o++] = 0x3C; // TTL 60 s
+    resp[o++] = 0x00; resp[o++] = 0x04; // RDLENGTH 4
+    ip.split('.').forEach(n => { resp[o++] = parseInt(n, 10); });
+    return resp.slice(0, o);
+}
+
+function _startDnsServer(attempt) {
+    attempt = attempt || 1;
+    const dns = dgram.createSocket('udp4');
+
+    dns.on('message', (msg, rinfo) => {
+        try {
+            const response = _buildDnsResponse(msg, detectedHotspotIP);
+            dns.send(response, rinfo.port, rinfo.address);
+        } catch (_) { /* ignore malformed packets */ }
+    });
+
+    dns.on('error', err => {
+        dns.close();
+        if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && attempt < 5) {
+            console.log('[DNS]  Port 53 busy (attempt ' + attempt + '/4) — retrying in 3 s...');
+            setTimeout(() => _startDnsServer(attempt + 1), 3000);
+        } else if (err.code === 'EACCES') {
+            console.log('[DNS]  Port 53 access denied — run start-server.bat as Administrator.');
+            console.log('[DNS]  owhas.lan will NOT work; students must use the full IP address.');
+        } else if (err.code === 'EADDRINUSE') {
+            console.log('[DNS]  Port 53 still in use after all retries.');
+            console.log('[DNS]  Ensure start-server.bat ran as Administrator and Dnscache is stopped.');
+            console.log('[DNS]  owhas.lan will NOT work. Students must use the full IP address.');
+        } else {
+            console.log('[DNS]  Unexpected error: ' + err.message);
+        }
+    });
+
+    dns.bind(53, detectedHotspotIP, () => {
+        console.log('[DNS]  Listening on ' + detectedHotspotIP + ':53');
+        console.log('[DNS]  Students type  http://owhas.lan  — resolves to ' + detectedHotspotIP);
+        _addFirewallRule(53, 'OwHAS DNS 53', 'UDP');
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  PORT-80 REDIRECT
+//  http://owhas.lan  (port 80, the browser default) → attendance page
+//  Bound to hotspot IP only so it doesn't conflict with any existing
+//  web server on the PC.
+// ══════════════════════════════════════════════════════════════════
+function _startHttp80Redirect() {
+    const redirect = express();
+    const attendancePage = 'http://' + detectedHotspotIP + ':' + PORT + '/public/hotspot.html';
+
+    // ── Captive portal interception ───────────────────────────────────────────
+    // Android, iOS and Windows probe these URLs when connecting to a new WiFi.
+    // Returning 302 (instead of the expected 204/200) signals "captive portal"
+    // which:
+    //   1. Prevents Android WiFi-assist from falling back to mobile-data DNS
+    //   2. Shows a "Sign in to network" notification on Android/iOS
+    //   3. Auto-opens the attendance page when the student taps the notification
+    const captivePaths = [
+        '/generate_204',              // Android (Chrome / AOSP)
+        '/gen_204',                   // Android alt
+        '/hotspot-detect.html',       // iOS / macOS
+        '/library/test/success.html', // iOS older
+        '/connecttest.txt',           // Windows
+        '/ncsi.txt',                  // Windows NCSI
+        '/success.txt',               // Firefox
+        '/canonical.html',            // Ubuntu
+        '/chat',                      // Android alt
+    ];
+    captivePaths.forEach(p => redirect.get(p, (_req, res) => res.redirect(302, attendancePage)));
+
+    // Everything else on port 80 → attendance page (handles http://owhas.lan)
+    redirect.use((_req, res) => res.redirect(302, attendancePage));
+
+    // Listen on ALL interfaces so the captive probe reaches us regardless of IP
+    http.createServer(redirect).listen(80, '0.0.0.0', () => {
+        console.log('[HTTP80] Captive portal active on :80');
+        console.log('[HTTP80] Android/iOS will auto-popup "Sign in to network" → attendance page');
+        console.log('[HTTP80] http://owhas.lan → ' + attendancePage);
+        _addFirewallRule(80, 'OwHAS HTTP 80', 'TCP');
+    }).on('error', err => {
+        if (err.code === 'EACCES') {
+            console.log('[HTTP80] Port 80 permission denied — run start-server.bat as Administrator.');
+        } else if (err.code === 'EADDRINUSE') {
+            console.log('[HTTP80] Port 80 in use by another process — captive portal unavailable.');
+        } else {
+            console.log('[HTTP80] Error: ' + err.message);
+        }
+    });
+}
 
 
 

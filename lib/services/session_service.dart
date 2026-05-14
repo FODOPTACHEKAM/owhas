@@ -31,10 +31,10 @@ class SessionService {
 
   String get _serverBaseUrl => ServerConfig().baseUrl;
 
-  /// Generate a 6-digit numeric PIN (100000 - 999999)
+  /// Generate a 4-digit numeric PIN (1000 - 9999)
   String generateSessionPin() {
     final random = Random.secure();
-    return (100000 + random.nextInt(900000)).toString();
+    return (1000 + random.nextInt(9000)).toString();
   }
 
   /// Generate a secure opaque session token for QR fallback
@@ -237,7 +237,7 @@ class SessionService {
       throw Exception('This device has already been used for registration');
     }
 
-    Student? student = await _storage.getStudentByMatricule(matricule);
+    Student? student = await _storage.getStudentByMatricule(matricule, session.id);
     if (student == null) {
       student = Student(
         id: _uuid.v4(),
@@ -248,11 +248,11 @@ class SessionService {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
-      await _storage.saveStudent(student);
+      await _storage.saveStudent(student, session.id);
     } else if (email != null && student.email != email) {
       // Update email if changed
       student = student.copyWith(email: email, updatedAt: DateTime.now());
-      await _storage.saveStudent(student);
+      await _storage.saveStudent(student, session.id);
     }
 
     // Collect location if enabled
@@ -309,7 +309,7 @@ class SessionService {
       throw Exception('No active session');
     }
 
-    Student? student = await _storage.getStudentByMatricule(matricule);
+    Student? student = await _storage.getStudentByMatricule(matricule, session.id);
     if (student == null) {
       student = Student(
         id: _uuid.v4(),
@@ -320,10 +320,10 @@ class SessionService {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
-      await _storage.saveStudent(student);
+      await _storage.saveStudent(student, session.id);
     } else if (email != null && student.email != email) {
       student = student.copyWith(email: email, updatedAt: DateTime.now());
-      await _storage.saveStudent(student);
+      await _storage.saveStudent(student, session.id);
     }
 
     final now = DateTime.now();
@@ -488,7 +488,7 @@ class SessionService {
     await _storage.deleteAttendanceRecord(sessionId, recordId);
 
     // 3. Delete the student entity completely
-    await _storage.deleteStudent(record.studentId);
+    await _storage.deleteStudent(record.studentId, sessionId);
 
     // 4. Clean up in-memory join-time tracking
     _studentJoinTimes.remove(recordId);

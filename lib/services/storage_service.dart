@@ -91,10 +91,10 @@ class StorageService {
     );
   }
 
-  // Student storage
-  Future<void> saveStudent(Student student) async {
+  // Student storage — scoped per session to prevent cross-session data wipe
+  Future<void> saveStudent(Student student, String sessionId) async {
     await init();
-    final students = await getStudents();
+    final students = await getStudents(sessionId);
     final index = students.indexWhere((s) => s.id == student.id);
     if (index != -1) {
       students[index] = student;
@@ -102,14 +102,14 @@ class StorageService {
       students.add(student);
     }
     await _prefs!.setString(
-      'students',
+      'students_$sessionId',
       jsonEncode(students.map((s) => s.toJson()).toList()),
     );
   }
 
-  Future<List<Student>> getStudents() async {
+  Future<List<Student>> getStudents(String sessionId) async {
     await init();
-    final data = _prefs!.getString('students');
+    final data = _prefs!.getString('students_$sessionId');
     if (data == null) return [];
     try {
       final List<dynamic> decoded = jsonDecode(data);
@@ -119,8 +119,11 @@ class StorageService {
     }
   }
 
-  Future<Student?> getStudentByMatricule(String matricule) async {
-    final students = await getStudents();
+  Future<Student?> getStudentByMatricule(
+    String matricule,
+    String sessionId,
+  ) async {
+    final students = await getStudents(sessionId);
     try {
       return students.firstWhere((s) => s.matricule == matricule);
     } catch (e) {
@@ -128,13 +131,13 @@ class StorageService {
     }
   }
 
-  /// Delete a student by their unique ID
-  Future<void> deleteStudent(String studentId) async {
+  /// Delete a student by their unique ID within a session
+  Future<void> deleteStudent(String studentId, String sessionId) async {
     await init();
-    final students = await getStudents();
+    final students = await getStudents(sessionId);
     students.removeWhere((s) => s.id == studentId);
     await _prefs!.setString(
-      'students',
+      'students_$sessionId',
       jsonEncode(students.map((s) => s.toJson()).toList()),
     );
   }
@@ -144,7 +147,7 @@ class StorageService {
   Future<void> clearSessionData(String sessionId) async {
     await init();
     await _prefs!.remove('attendance_$sessionId');
-    await _prefs!.remove('students');
+    await _prefs!.remove('students_$sessionId');
     final sessions = await getSessions();
     final filtered = sessions.where((s) => s.id != sessionId).toList();
     if (filtered.isEmpty) {

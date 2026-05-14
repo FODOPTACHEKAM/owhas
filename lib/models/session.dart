@@ -15,7 +15,7 @@ class AttendanceSession {
   final DateTime updatedAt;
   final int durationMinutes;
   final String? lecturerName;
-  final String? sessionPin;      // 6-digit PIN for printed poster method
+  final String? sessionPin;      // 4-digit PIN for printed poster method
   final String? sessionToken;    // opaque token for QR fallback
 
   AttendanceSession({

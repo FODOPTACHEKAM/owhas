@@ -61,7 +61,7 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
 
   // ---- Shared UI state ----
   bool _isLoading = false;
-  String _statusMessage = 'Enter the 6-digit PIN from your instructor.';
+  String _statusMessage = 'Enter the 4-digit PIN from your instructor.';
   String? _errorMessage;
 
   // ---- Entrance animation ----
@@ -148,7 +148,7 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
         _pinVerifyState = _PinVerifyState.error;
         _errorMessage =
             'Invalid PIN or server unreachable. Check your PIN and ensure you are on the class network.';
-        _statusMessage = 'Enter the 6-digit PIN from your instructor.';
+        _statusMessage = 'Enter the 4-digit PIN from your instructor.';
       });
     }
   }
@@ -264,7 +264,7 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
       _emailController.clear();
       _errorMessage = null;
       _pinVerifyState = _PinVerifyState.idle;
-      _statusMessage = 'Enter the 6-digit PIN from your instructor.';
+      _statusMessage = 'Enter the 4-digit PIN from your instructor.';
     });
   }
 
@@ -527,11 +527,11 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
             keyboardType: TextInputType.number,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
+              LengthLimitingTextInputFormatter(4),
             ],
             validator: (v) {
               if (v == null || v.isEmpty) return 'Required';
-              if (v.length != 6) return 'PIN must be exactly 6 digits';
+              if (v.length != 4) return 'PIN must be exactly 4 digits';
               return null;
             },
           ),
@@ -592,7 +592,7 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage>
                   _currentStep = 0;
                   _errorMessage = null;
                   _statusMessage =
-                      'Enter the 6-digit PIN from your instructor.';
+                      'Enter the 4-digit PIN from your instructor.';
                 }),
               ),
               const SizedBox(width: AppSpacing.md),
