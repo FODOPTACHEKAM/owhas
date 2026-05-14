@@ -87,6 +87,8 @@ class _QrCodeSectionState extends State<QrCodeSection> {
                                 size: qrSize,
                               ),
                       ),
+                      const SizedBox(height: 8),
+                      _buildOnlineHint(context),
                       const SizedBox(height: 16),
                       _buildDetails(context),
                     ],
@@ -94,29 +96,35 @@ class _QrCodeSectionState extends State<QrCodeSection> {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            const BoxShadow(
-                              color: Color.fromRGBO(0, 0, 0, 0.04),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                const BoxShadow(
+                                  color: Color.fromRGBO(0, 0, 0, 0.04),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: _isLoading
-                            ? SizedBox(
-                                width: qrSize,
-                                height: qrSize,
-                                child: const CircularProgressIndicator(),
-                              )
-                            : QrImageView(
-                                data: _qrData,
-                                size: qrSize,
-                              ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    width: qrSize,
+                                    height: qrSize,
+                                    child: const CircularProgressIndicator(),
+                                  )
+                                : QrImageView(
+                                    data: _qrData,
+                                    size: qrSize,
+                                  ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildOnlineHint(context),
+                        ],
                       ),
                       const SizedBox(width: 16),
                       Expanded(child: _buildDetails(context)),
@@ -125,6 +133,28 @@ class _QrCodeSectionState extends State<QrCodeSection> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildOnlineHint(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.language,
+          size: 13,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          'For ONLINE type  OWHAS.ORG',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
+      ],
     );
   }
 

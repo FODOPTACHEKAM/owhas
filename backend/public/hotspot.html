@@ -241,10 +241,10 @@
             <div class="form-group">
                 <label for="sessionPin">Session PIN <span class="required">*</span></label>
                 <input type="text" id="sessionPin" class="form-input"
-                    placeholder="000000" maxlength="6"
+                    placeholder="0000" maxlength="4"
                     inputmode="numeric" autocomplete="off"
-                    aria-describedby="pinHelp pinError" pattern="[0-9]{6}">
-                <span class="form-help" id="pinHelp">Enter the 6-digit PIN from your instructor</span>
+                    aria-describedby="pinHelp pinError" pattern="[0-9]{4}">
+                <span class="form-help" id="pinHelp">Enter the 4-digit PIN from your instructor</span>
                 <span class="form-error" id="pinError"></span>
             </div>
 
@@ -506,7 +506,7 @@ class AttendanceRegistrationApp {
         // Strip any non-digit characters the Android keyboard might inject
         // (some keyboards add spaces, dots, or Unicode digits on numeric mode)
         this.el.sessionPin.addEventListener('input', () => {
-            const cleaned = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 6);
+            const cleaned = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 4);
             if (this.el.sessionPin.value !== cleaned) this.el.sessionPin.value = cleaned;
         });
     }
@@ -541,12 +541,12 @@ class AttendanceRegistrationApp {
 
     async _handleVerifyPin() {
         // Strip and re-validate in case the input listener was bypassed (paste, autofill)
-        const pin = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 6);
+        const pin = this.el.sessionPin.value.replace(/\D/g, '').slice(0, 4);
         this.el.sessionPin.value = pin;
         this.el.pinError.textContent = '';
 
-        if (pin.length !== 6) {
-            this.el.pinError.textContent = `Enter a valid 6-digit PIN (got ${pin.length} digit${pin.length === 1 ? '' : 's'})`;
+        if (pin.length !== 4) {
+            this.el.pinError.textContent = `Enter a valid 4-digit PIN (got ${pin.length} digit${pin.length === 1 ? '' : 's'})`;
             return;
         }
 

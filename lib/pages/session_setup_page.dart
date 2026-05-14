@@ -18,6 +18,7 @@ class SessionSetupPage extends StatefulWidget {
 class _SessionSetupPageState extends State<SessionSetupPage> {
   final _formKey = GlobalKey<FormState>();
   final _lecturerNameController = TextEditingController();
+  final _lecturerNameFocus = FocusNode();
   // Display-only controllers for the picker fields (readOnly)
   final _semesterPickerController = TextEditingController();
   final _coursePickerController = TextEditingController();
@@ -34,12 +35,14 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
   CatalogueCourse? _selectedCourse;
 
   bool _hasUploadedPrevious = false;
-  bool _hasSavedLecturerName = false;
+  // Tracks what is currently persisted in SharedPreferences.
+  // null = nothing saved yet; non-null = pre-filled from storage.
+  String? _storedLecturerName;
 
   @override
   void initState() {
     super.initState();
-    _lecturerNameController.addListener(_onLecturerNameChanged);
+    _lecturerNameFocus.addListener(_onLecturerNameFocusChanged);
     _loadSavedLecturerName();
     _loadCatalogue();
   }
@@ -48,21 +51,27 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
     final savedName = await SignatureService.loadLecturerName();
     if (savedName != null && savedName.isNotEmpty && mounted) {
       setState(() {
+        _storedLecturerName = savedName;
         _lecturerNameController.text = savedName;
-        _hasSavedLecturerName = true;
       });
     }
   }
 
-  void _onLecturerNameChanged() {
-    final name = _lecturerNameController.text.trim();
-    if (!_hasSavedLecturerName && name.isNotEmpty) {
-      SignatureService.saveLecturerName(name).then((saved) {
-        if (saved && mounted) {
-          setState(() => _hasSavedLecturerName = true);
-        }
-      });
+  // Saves the name when the lecturer taps away from the field.
+  void _onLecturerNameFocusChanged() {
+    if (!_lecturerNameFocus.hasFocus) {
+      final name = _lecturerNameController.text.trim();
+      if (name.isNotEmpty && name != _storedLecturerName) {
+        SignatureService.saveLecturerName(name);
+        if (mounted) setState(() => _storedLecturerName = name);
+      }
     }
+  }
+
+  Future<void> _clearSavedLecturerName() async {
+    await SignatureService.clearLecturerName();
+    _lecturerNameController.clear();
+    if (mounted) setState(() => _storedLecturerName = null);
   }
 
   Future<void> _loadCatalogue() async {
@@ -248,7 +257,8 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
 
   @override
   void dispose() {
-    _lecturerNameController.removeListener(_onLecturerNameChanged);
+    _lecturerNameFocus.removeListener(_onLecturerNameFocusChanged);
+    _lecturerNameFocus.dispose();
     _lecturerNameController.dispose();
     _semesterPickerController.dispose();
     _coursePickerController.dispose();
@@ -283,6 +293,17 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
 
   Future<void> _createSession() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final duration = int.tryParse(_durationController.text) ?? 0;
+    final gracePeriod = int.tryParse(_gracePeriodController.text) ?? 0;
+    if (gracePeriod >= duration) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Grace period must be shorter than session duration.'),
+        ),
+      );
+      return;
+    }
 
     final provider = context.read<AttendanceProvider>();
     final lecturerName = _lecturerNameController.text.trim();
@@ -407,15 +428,26 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Lecturer Name
+                  // Lecturer Name — pre-filled from last session when available
                   TextFormField(
                     controller: _lecturerNameController,
-                    decoration: const InputDecoration(
+                    focusNode: _lecturerNameFocus,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
                       labelText: 'Lecturer Name',
                       hintText: 'e.g. Dr. John Smith',
-                      helperText: 'Saved automatically for future sessions',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person),
+                      helperText: _storedLecturerName != null
+                          ? 'Pre-filled from your last session'
+                          : 'Will be saved for future sessions',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.person),
+                      suffixIcon: _storedLecturerName != null
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              tooltip: 'Clear saved name',
+                              onPressed: _clearSavedLecturerName,
+                            )
+                          : null,
                     ),
                     validator: (v) =>
                         v?.trim().isEmpty ?? true ? 'Required' : null,
@@ -670,15 +702,6 @@ class _SessionSetupPageState extends State<SessionSetupPage> {
             ),
           ),
 
-        const SizedBox(height: AppSpacing.sm),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: () => context.push('/catalogue'),
-            icon: const Icon(Icons.edit_outlined, size: 15),
-            label: const Text('Manage Catalogue'),
-          ),
-        ),
       ],
     );
   }

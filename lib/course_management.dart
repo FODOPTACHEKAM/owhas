@@ -65,12 +65,12 @@ class CourseManagement {
     // ── SEMESTER 1 ────────────────────────────────────────────────────────────
     SemesterData(
       id: 'sem_2025_1',
-      label: 'Semester 1 — 2025/2026',
+      label: 'FALL — 2025/26',
       academicYear: '2025/2026',
       number: 1,
-      isActive: true, // <-- pre-selected for lecturers
+      isActive: false, // <-- pre-selected for lecturers
       courses: [
-        CourseData(name: 'Database Systems',              code: 'IFT3025', department: 'Computer Science',  credits: 3),
+        CourseData(name: 'Database Management Systems',   code: 'IFT3025', department: 'Computer Science',  credits: 3),
         CourseData(name: 'Web Development',               code: 'IFT3060', department: 'Computer Science',  credits: 3),
         CourseData(name: 'Algorithms and Data Structures',code: 'IFT2010', department: 'Computer Science',  credits: 4),
         CourseData(name: 'Introduction to Programming',   code: 'IFT1005', department: 'Computer Science',  credits: 3),
@@ -81,15 +81,32 @@ class CourseManagement {
     // ── SEMESTER 2 ────────────────────────────────────────────────────────────
     SemesterData(
       id: 'sem_2025_2',
-      label: 'Semester 2 — 2025/2026',
+      label: 'SPRING — 2025/26',
       academicYear: '2025/2026',
       number: 2,
       isActive: false,
       courses: [
-        CourseData(name: 'Operating Systems',  code: 'IFT3150', department: 'Computer Science',    credits: 3),
-        CourseData(name: 'Computer Networks',  code: 'IFT3200', department: 'Computer Networks',   credits: 3),
-        CourseData(name: 'Software Engineering',code: 'IFT3010', department: 'Computer Science',   credits: 3),
+        CourseData(name: 'Operating Systems',  code: 'IFT3150', department: 'Computer Science',    credits: 4),
+        CourseData(name: 'Computer Networks',  code: 'IFT3200', department: 'Computer Networks',   credits: 4),
+        CourseData(name: 'Software Engineering',code: 'IFT3010', department: 'Computer Science',   credits: 4),
+        CourseData(name: 'Android Application Development',code: 'CS2560', department: 'Computer Science',   credits: 4),
+        CourseData(name: 'Object Oriented Analysis Design and Implementation',  code: 'SE413', department: 'Computer Science',    credits: 4),
+        CourseData(name: 'Software Architecture',  code: 'SE0934', department: 'Software Engineering',    credits: 4),
         // ↑ Add more Semester 2 courses here ↑
+      ],
+    ),
+
+// ── SEMESTER 3 ────────────────────────────────────────────────────────────
+SemesterData(
+      id: 'sem_2025_3',
+      label: 'SUMMER — 2025/26',
+      academicYear: '2025/2026',
+      number: 3,
+      isActive: false,
+      courses: [
+        CourseData(name: 'Ethical Hacking',  code: 'SE3278', department: 'Software Engineering',    credits: 4),
+        
+        // ↑ Add more Semester 3 courses here ↑
       ],
     ),
 

@@ -1,5 +1,6 @@
 ﻿const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 const { exec, execSync } = require('child_process');
 const multer = require('multer');
@@ -8,8 +9,20 @@ const { generateAttendancePDF } = require('./src/services/pdfService');
 const dgram = require('dgram');
 const http  = require('http');
 const { randomUUID } = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+// ====== Rate limiting — prevent brute-force PIN guessing ======
+const pinLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,  // 5-minute window
+    max: 10,                   // 10 attempts per IP per window
+    message: { error: 'Too many PIN attempts. Please wait 5 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/validate-pin', pinLimiter);
+app.use('/api/biometric-connect', pinLimiter);
 
 // ====== HARDCODED SERVER CONFIG ======
 const PORT = 5501; // same port for both HTTP and HTTPS
@@ -97,6 +110,39 @@ app.get('/api/qr-url', (req, res) => {
 // ====== In-memory PIN-scoped session storage ======
 const activeSessions = new Map();
 
+// ====== Session persistence (survives server restart / crash) ======
+const SESSION_FILE = path.join(__dirname, 'sessions.json');
+
+function persistSessions() {
+    try {
+        const obj = {};
+        for (const [pin, s] of activeSessions.entries()) {
+            // pendingFaces is a Map and cannot be serialised — it is transient
+            const { pendingFaces, ...rest } = s;
+            obj[pin] = rest;
+        }
+        fs.writeFileSync(SESSION_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        console.error('[PERSIST] Failed to save sessions:', e.message);
+    }
+}
+
+// Restore unexpired sessions on startup
+if (fs.existsSync(SESSION_FILE)) {
+    try {
+        const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+        for (const [pin, s] of Object.entries(saved)) {
+            if (new Date() < new Date(s.expiresAt)) {
+                s.pendingFaces = new Map();
+                activeSessions.set(pin, s);
+                console.log(`[RESTORE] Restored session PIN ${pin} (${s.courseName})`);
+            }
+        }
+    } catch (e) {
+        console.error('[RESTORE] Failed to restore sessions:', e.message);
+    }
+}
+
 let sessionConfig = {
     requiredConnectionMinutes: 15,
     gracePeriodMinutes: 5,
@@ -155,8 +201,8 @@ const upload = multer({
 app.post('/api/session-init', (req, res) => {
     const { courseName, courseCode, lecturerId, lecturerName, pin, sessionToken, durationMinutes, latitude, longitude } = req.body;
 
-    if (!pin || !/^\d{6}$/.test(pin)) {
-        return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    if (!pin || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: 'A valid 4-digit PIN is required.' });
     }
     // Evict the PIN if it belongs to an already-expired session before collision check.
     // activeSessions.has() would otherwise return true for stale entries.
@@ -187,6 +233,7 @@ app.post('/api/session-init', (req, res) => {
 
     const geoLog = targetLocation ? `(GPS: ${targetLocation.latitude}, ${targetLocation.longitude})` : '(No GPS)';
     console.log(`[SESSION-INIT] PIN ${pin} activated for ${courseName || 'Untitled'} ${geoLog} (expires ${expiresAt.toISOString()})`);
+    persistSessions();
     res.json({ success: true, pin, message: 'Session activated with PIN ' + pin });
 });
 
@@ -231,6 +278,7 @@ app.post('/api/end-session', (req, res) => {
     }
     const attendeeCount = session.attendees.length;
     activeSessions.delete(pin);
+    persistSessions();
     console.log(`[SESSION-END] PIN ${pin} deactivated. ${attendeeCount} attendee(s) recorded.`);
     res.json({ success: true, message: `Session ended. ${attendeeCount} attendee(s) recorded.`, attendeeCount });
 });
@@ -371,7 +419,7 @@ app.post('/connect', (req, res) => {
     let session = null;
     let pin = sessionPin;
 
-    if (pin && /^\d{6}$/.test(pin)) {
+    if (pin && /^\d{4}$/.test(pin)) {
         session = getSessionByPin(pin);
     } else if (sessionToken) {
         for (const [p, s] of activeSessions.entries()) {
@@ -455,7 +503,7 @@ app.post('/api/biometric-connect', (req, res) => {
         return res.status(403).send('Face verification required. Please complete the face scan first.');
 
     let session = null, pin = sessionPin;
-    if (pin && /^\d{6}$/.test(pin)) session = getSessionByPin(pin);
+    if (pin && /^\d{4}$/.test(pin)) session = getSessionByPin(pin);
     if (!session && sessionToken) {
         for (const [p, s] of activeSessions.entries()) {
             if (s.sessionToken === sessionToken) { session = s; pin = p; break; }
@@ -567,7 +615,7 @@ app.get('/api/attendees', (req, res) => {
 
 app.post('/api/reset', (req, res) => {
     const { courseName, courseCode, pin, lecturerId, durationMinutes } = req.body;
-    if (!pin || !/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
+    if (!pin || !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'A valid 6-digit PIN is required.' });
     let session = activeSessions.get(pin);
     let previousCount = 0;
     if (session) {
