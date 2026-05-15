@@ -320,7 +320,15 @@ class AttendanceProvider extends ChangeNotifier {
       final connectedAtStr = a['connectedAt'] as String?;
       final joinedAt =
           connectedAtStr != null ? DateTime.parse(connectedAtStr) : now;
-      final durationMinutes = now.difference(joinedAt).inMinutes;
+
+      // For online students the server provides lastSeen, updated by GPS heartbeats.
+      // When heartbeats stop (student leaves), lastSeen freezes and so does duration.
+      // Offline students have no lastSeen field — fall back to wall-clock time.
+      final lastSeenStr = a['lastSeen'] as String?;
+      final effectiveTime =
+          lastSeenStr != null ? DateTime.parse(lastSeenStr) : now;
+
+      final durationMinutes = effectiveTime.difference(joinedAt).inMinutes;
       final isVerified = durationMinutes >= requiredMinutes;
 
       return AttendanceRecord(

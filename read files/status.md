@@ -137,7 +137,7 @@ The app tries these addresses in order (all in parallel, 300 ms timeout each):
 | 3rd | `http://192.168.0.1:5501` | Alternative router |
 | 4th | `http://10.0.0.1:5501` | Enterprise network |
 | 5th | `http://10.0.2.2:5501` | Android Emulator only |
-| Fallback | `https://owhas.com` | Cloud server (internet required) |
+| Fallback | `https://owhas.org` | Cloud server (internet required) |
 
 If none responds, it falls back to `192.168.137.1:5501` by default.
 

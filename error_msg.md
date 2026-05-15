@@ -1,4 +1,5 @@
-+++++++++++++# OwHAS — Warning & Error Messages Reference
++++++++++++++
+# OwHAS — Warning & Error Messages Reference
 
 This document covers every message the lecturer can see in the dashboard,
 when each one appears, and whether it appears in offline, online, or hybrid mode.
@@ -12,10 +13,10 @@ dashboard when the server cannot be reached.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 🔴  Server not reachable — web registration (hotspot.html) is   │  [Retry]
+│ 🔴  Server not reachable — web registration (hotspot.html) is     [Retry]
 │     unavailable. Start node server.js on the PC and connect     │
 │     phones to the same Wi-Fi. Use the Retry button in the       │
-│     dashboard to reconnect.                                      │
+│     dashboard to reconnect.                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

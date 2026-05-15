@@ -9,7 +9,7 @@ reachable at session creation time, using `ServerConfig.detect()`.
 
 | | **Offline (Hotspot)** | **Online (Cloud)** | **Hybrid** |
 |---|---|---|---|
-| Server location | Lecturer's PC on a local hotspot | Remote `owhas.com` | Both simultaneously |
+| Server location | Lecturer's PC on a local hotspot | Remote `owhas.org` | Both simultaneously |
 | Student access | Must join the hotspot | Any internet connection | Either |
 | Proximity proof | Being on the hotspot is proof | GPS validation required | GPS for online students; LAN for offline |
 | Final export | Local PDF/Excel | Cloud PDF/Excel | Merged — one unified file |
@@ -31,7 +31,7 @@ isolate to avoid UI jank. It probes servers in this exact order:
 1. Fixed hotspot gateways   →  192.168.137.1:5501, 192.168.43.1:5501, etc.
 2. Full subnet scan         →  192.168.0.x, 192.168.1.x, 10.0.0.x  (parallel, 800 ms)
 3. Android emulator         →  10.0.2.2:5501
-4. Cloud server             →  https://owhas.com  (2 s timeout)
+4. Cloud server             →  https://owhas.org  (2 s timeout)
 5. Fallback                 →  192.168.137.1:5501  (nothing found)
 ```
 
@@ -55,7 +55,7 @@ taken.
 ## 3. Online Session — Full Flow
 
 ```
-Lecturer phone                    Cloud server (owhas.com)           Student phone/laptop
+Lecturer phone                    Cloud server (owhas.org)           Student phone/laptop
 ─────────────────                 ────────────────────────           ────────────────────
 [Create session]
   GPS captured once here
@@ -68,7 +68,7 @@ Lecturer phone                    Cloud server (owhas.com)           Student pho
                                   Return { sessionToken }
 [Dashboard shows QR]
   QR encodes:
-  https://owhas.com/hotspot.html
+  https://owhas.org/hotspot.html
   ?pin=XXXX                       ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─>  Student scans QR
                                                              Browser opens HTTPS page
                                                              [REQUEST GPS]
@@ -236,8 +236,8 @@ session.attendees.push({
 | Feature | Offline | Online |
 |---|---|---|
 | Server warning banner | Shows if local server unreachable | Shows if cloud unreachable |
-| Retry button | Rescans local subnet | Re-pings `owhas.com` |
-| QR code URL | `http://192.168.137.1:5501/…` | `https://owhas.com/hotspot.html?pin=XXXX` |
+| Retry button | Rescans local subnet | Re-pings `owhas.org` |
+| QR code URL | `http://192.168.137.1:5501/…` | `https://owhas.org/hotspot.html?pin=XXXX` |
 | Student count badge | Refreshed from LAN | Refreshed from cloud API |
 | PDF/Excel export | Fetched from LAN server | Fetched from cloud server |
 | Session persistence | Lost if PC crashes | Survives server restarts |
@@ -275,22 +275,22 @@ datasets together without any extra identifiers.
    → [ { username, matricule, timestamp, source: 'offline' }, … ]
 
 3. Flutter app queries the cloud server:
-   GET https://owhas.com/api/attendees?pin=XXXX
+   GET https://owhas.org/api/attendees?pin=XXXX
    → [ { username, matricule, timestamp, source: 'online' }, … ]
 
 4. Dart merge — deduplicate by matricule, online wins ties:
    final merged = mergeAttendees(offlineList, onlineList);
 
 5. Merged list is pushed to the cloud as the canonical record:
-   POST https://owhas.com/api/merge-session
+   POST https://owhas.org/api/merge-session
    { pin, attendees: [...merged] }
 
 6. Both servers are closed:
    POST http://192.168.137.1:5501/api/end-session { pin }
-   POST https://owhas.com/api/end-session { pin }
+   POST https://owhas.org/api/end-session { pin }
 
 7. Export the unified file:
-   GET https://owhas.com/export?pin=XXXX
+   GET https://owhas.org/export?pin=XXXX
    → single PDF/Excel — no GPS data, source column included
 ```
 

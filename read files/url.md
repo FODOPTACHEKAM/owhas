@@ -26,7 +26,7 @@
 
 - `ServerConfig().onlineUrl`
   - This remains a static constant because it represents the fixed online cloud endpoint.
-  - The value is `https://owhas.com`.
+  - The value is `https://owhas.org`.
 
 ## Role of `_onlineUrl`
 
