@@ -203,6 +203,21 @@
             .card-header h1{font-size:1.4rem}
             .card-body{padding:1.5rem 1.25rem}
         }
+        /* ── Heartbeat presence indicator ── */
+        .info-panel.heartbeat{background:rgba(16,185,129,.07);border-left-color:var(--success)}
+        .heartbeat-dot{
+            display:inline-block;width:8px;height:8px;
+            background:var(--success);border-radius:50%;
+            margin-right:6px;vertical-align:middle;
+            animation:hb-pulse 2s ease-in-out infinite;
+        }
+        @keyframes hb-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
+
+        @media(max-width:640px){
+            .card-header{padding:2rem 1.25rem 1.25rem}
+            .card-header h1{font-size:1.4rem}
+            .card-body{padding:1.5rem 1.25rem}
+        }
         @media(prefers-reduced-motion:reduce){
             *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
         }
@@ -359,6 +374,15 @@
 <script>
 'use strict';
 
+// ══════════════════════════════════════════════════════════════════
+//  HEARTBEAT INTERVAL (browser fallback)
+//  The server sends the authoritative interval in heartbeatIntervalMs
+//  at registration time, so both sides always stay in sync.
+//  This constant is only used if the server response omits that field.
+//  To change the interval, edit HEARTBEAT_INTERVAL_MINUTES in server.js.
+// ══════════════════════════════════════════════════════════════════
+const HEARTBEAT_INTERVAL_MINUTES = 2;   // ← keep in sync with server.js
+
 /* ════════════════════════════════════════════════════════════
    FacePhotoManager
    Uses <input type="file" capture="user"> — no HTTPS or getUserMedia needed.
@@ -450,6 +474,8 @@ class AttendanceRegistrationApp {
         this.faceId           = null;  // one-time token issued by /api/verify-face
         this.faceManager      = null;
         this.currentStep      = 0;
+        this._heartbeatTimer  = null;  // setInterval handle for GPS keep-alive
+        this._heartbeatData   = null;  // { token, matricule, pin, sessionToken }
 
         this._bindElements();
         this._bindListeners();
@@ -718,13 +744,88 @@ class AttendanceRegistrationApp {
             body:    JSON.stringify(payload),
         });
 
-        const text = await r.text();
         if (r.ok) {
-            this._status(`✓ ${text}`, 'success');
+            const data = await r.json();
+            const msg  = data.message || 'Registration successful';
+            if (data.heartbeatToken) {
+                // Online session — start GPS keep-alive loop
+                this._startHeartbeat({
+                    token:        data.heartbeatToken,
+                    intervalMs:   data.heartbeatIntervalMs || HEARTBEAT_INTERVAL_MINUTES * 60 * 1000,
+                    matricule:    payload.matricule,
+                    pin:          this.currentPin,
+                    sessionToken: this.sessionToken,
+                });
+            } else {
+                this._status(`✓ ${msg}`, 'success');
+            }
             this._clearForm();
             this._scheduleReset();
         } else {
+            const text = await r.text();
             this._status(`Server error (${r.status}): ${text}`, 'error');
+        }
+    }
+
+    /* ── GPS heartbeat (online sessions only) ── */
+
+    _startHeartbeat({ token, intervalMs, matricule, pin, sessionToken }) {
+        // Cancel any heartbeat from a previous registration on the same page load
+        if (this._heartbeatTimer) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
+
+        this._heartbeatData = { token, matricule, pin, sessionToken };
+
+        this._heartbeatTimer = setInterval(() => this._sendHeartbeat(), intervalMs);
+
+        // Stop the loop cleanly when the student closes or navigates away
+        window.addEventListener('beforeunload', () => {
+            if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+        }, { once: true });
+
+        const intervalMinutes = Math.round(intervalMs / 60000);
+        // Use the dedicated heartbeat panel style (pulsing green dot)
+        this.el.statusPanel.className = 'info-panel heartbeat';
+        this.el.statusContent.innerHTML =
+            `<span class="heartbeat-dot"></span>` +
+            `Registered ✓ — <strong>Keep this page open.</strong> ` +
+            `Your location is confirmed every ${intervalMinutes} min to verify attendance.`;
+    }
+
+    async _sendHeartbeat() {
+        if (!this._heartbeatData) return;
+        try {
+            const pos = await this._getLocation();
+            if (!pos) return; // GPS unavailable this cycle — skip silently
+
+            const body = {
+                token:     this._heartbeatData.token,
+                matricule: this._heartbeatData.matricule,
+                lat:       pos.coords.latitude,
+                lng:       pos.coords.longitude,
+            };
+            if (this._heartbeatData.pin)          body.pin          = this._heartbeatData.pin;
+            if (this._heartbeatData.sessionToken) body.sessionToken = this._heartbeatData.sessionToken;
+
+            const r = await fetch('/api/heartbeat', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(body),
+            });
+
+            if (r.status === 403) {
+                // Out of range or already frozen — stop the loop and warn the student
+                clearInterval(this._heartbeatTimer);
+                this._heartbeatTimer = null;
+                const data = await r.json().catch(() => ({}));
+                this._status(`⚠ ${data.error || 'Attendance frozen — you may have left the classroom.'}`, 'warning');
+            }
+            // 200 OK: no UI change — the pulsing dot continues to show presence
+        } catch (_) {
+            // Network error: heartbeat missed silently.
+            // Server will freeze the clock after HEARTBEAT_GRACE_PERIODS missed beats.
         }
     }
 

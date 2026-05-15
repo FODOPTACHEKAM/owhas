@@ -109,7 +109,7 @@ class ServerConfig {
   factory ServerConfig() => _instance;
   ServerConfig._internal();
 
-  static const String _onlineUrl = 'https://owhas.com';
+  static const String _onlineUrl = 'https://owhas.org';
   static const String _defaultEmulatorHost = '10.0.2.2';
   static const String _defaultHotspotHost = '192.168.137.1';
   static const int _defaultServerPort = 5501;
@@ -161,7 +161,7 @@ class ServerConfig {
   /// The /24 subnet for network discovery scans.
   String get subnet {
     if (baseUrl.contains('10.0.2.2')) return '192.168.137.1';
-    if (baseUrl.contains('owhas.com')) return 'owhas.com';
+    if (baseUrl.contains('owhas.org')) return 'owhas.org';
     return '192.168.137.1';
   }
 

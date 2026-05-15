@@ -28,7 +28,7 @@ Because students use web browsers instead of a dedicated mobile app, the swap be
 
 ### A. The Student Experience
 - **Offline Mode:** The student joins the specific "Classroom WiFi". A captive portal pop-up automatically opens the attendance page on their browser.
-- **Online Mode:** The lecturer writes a URL on the board(owhas.com) (or provides a QR code). The student scans it or types it into their browser using their mobile data.
+- **Online Mode:** The lecturer writes a URL on the board(owhas.org) (or provides a QR code). The student scans it or types it into their browser using their mobile data.
 
 ### B. The Server Configuration Swap
 Your Node.js backend handles the modes based on where it is deployed:

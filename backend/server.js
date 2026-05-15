@@ -27,6 +27,27 @@ app.use('/api/biometric-connect', pinLimiter);
 // ====== HARDCODED SERVER CONFIG ======
 const PORT = 5501; // same port for both HTTP and HTTPS
 
+// ══════════════════════════════════════════════════════════════════
+//  ONLINE HEARTBEAT CONFIGURATION
+//  ─────────────────────────────────────────────────────────────────
+//  These are the only two values to edit when tuning presence checks.
+//
+//  HEARTBEAT_INTERVAL_MINUTES
+//      How often (minutes) the student's browser must send a GPS ping.
+//      The server returns this value to the browser at registration so
+//      both sides always stay in sync automatically.
+//      Shorter = tighter enforcement, more GPS battery drain.
+//      Recommended: 2
+//
+//  HEARTBEAT_GRACE_PERIODS
+//      How many consecutive missed heartbeats are tolerated before the
+//      student is flagged as leftEarly and their duration clock frozen.
+//      Set to 0 to freeze on the very first missed beat.
+//      Recommended: 1
+// ══════════════════════════════════════════════════════════════════
+const HEARTBEAT_INTERVAL_MINUTES = 2;   // ← edit this to change check frequency
+const HEARTBEAT_GRACE_PERIODS    = 1;   // ← edit this to change missed-beat tolerance
+
 
 
 
@@ -550,27 +571,48 @@ app.post('/api/biometric-connect', (req, res) => {
     // ── Commit ────────────────────────────────────────────────────────────────
     pending.used = true; // consume the token (single-use)
 
+    // Heartbeat token is only issued for online sessions (those with GPS geofencing).
+    // Offline sessions leave heartbeatToken null so the browser never starts the loop.
+    const isOnlineSession  = !!session.targetLocation;
+    const heartbeatToken   = isOnlineSession ? randomUUID() : null;
+    const connectedAt      = new Date().toISOString();
+
     session.faceDescriptors.push({
         faceId,
         matricule,
         name:         username,
         descriptor:   pending.descriptor,
-        registeredAt: new Date().toISOString(),
+        registeredAt: connectedAt,
     });
 
     session.attendees.push({
         username,
         matricule,
         email,
-        ip:           studentIP,
+        ip:               studentIP,
         faceId,
-        faceVerified: true,
-        connectedAt:  new Date().toISOString(),
-        time:         new Date().toLocaleString(),
+        faceVerified:     true,
+        connectedAt,
+        // lastSeen and heartbeat fields are only present for online sessions
+        ...(isOnlineSession && {
+            lastSeen:         connectedAt,   // updated by each GPS heartbeat
+            heartbeatToken,                  // secret — stripped before sending to Flutter
+            missedHeartbeats: 0,
+            leftEarly:        false,
+        }),
+        time: new Date().toLocaleString(),
     });
 
-    console.log(`[FACE-OK] ${username} (${matricule}) faceId=${faceId} PIN=${pin}`);
-    res.status(200).send(`Successfully registered for ${session.courseName}!`);
+    console.log(`[FACE-OK] ${username} (${matricule}) faceId=${faceId} PIN=${pin}${isOnlineSession ? ' [heartbeat armed]' : ''}`);
+    res.status(200).json({
+        ok:      true,
+        message: `Successfully registered for ${session.courseName}!`,
+        // heartbeatToken and interval are only sent for online sessions
+        ...(heartbeatToken && {
+            heartbeatToken,
+            heartbeatIntervalMs: HEARTBEAT_INTERVAL_MINUTES * 60 * 1000,
+        }),
+    });
 });
 
 // ── Periodic cleanup of expired/used pending face tokens ──────────────────────
@@ -610,7 +652,9 @@ app.get('/api/attendees', (req, res) => {
     const pin = req.query.pin;
     const session = getSessionByPin(pin);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    res.json({ attendees: session.attendees });
+    // Strip heartbeatToken and missedHeartbeats — internal fields not needed by clients
+    const sanitized = session.attendees.map(({ heartbeatToken, missedHeartbeats, ...rest }) => rest);
+    res.json({ attendees: sanitized });
 });
 
 app.post('/api/reset', (req, res) => {
@@ -654,6 +698,70 @@ app.get('/api/stats', (req, res) => {
     });
     res.json({ total: session.attendees.length, verified, pending, requiredConnectionMinutes: sessionConfig.requiredConnectionMinutes });
 });
+
+// ====== POST /api/heartbeat ======
+// GPS keep-alive sent by the student's browser every HEARTBEAT_INTERVAL_MINUTES.
+// Validates the student is still within the classroom radius.
+// If GPS is out of range, or heartbeats stop arriving, lastSeen freezes and
+// the student's duration clock stops growing in the Flutter dashboard.
+app.post('/api/heartbeat', (req, res) => {
+    const { pin, sessionToken, token, matricule, lat, lng } = req.body;
+
+    const session = getSessionByPinOrToken(pin, sessionToken);
+    if (!session) return res.status(404).json({ error: 'Session not found or expired' });
+
+    const attendee = session.attendees.find(a => a.matricule === matricule);
+    if (!attendee)
+        return res.status(404).json({ error: 'Student not found in session' });
+    if (!attendee.heartbeatToken)
+        return res.status(400).json({ error: 'Session does not use heartbeats (offline mode)' });
+    if (attendee.heartbeatToken !== token)
+        return res.status(403).json({ error: 'Invalid heartbeat token' });
+    if (attendee.leftEarly)
+        return res.status(403).json({ error: 'Attendance already frozen — you left the area earlier' });
+
+    // GPS re-validation: student must still be within the classroom radius
+    if (session.targetLocation) {
+        if (lat == null || lng == null)
+            return res.status(400).json({ error: 'GPS coordinates required for heartbeat' });
+        const dist = calculateDistance(
+            session.targetLocation.latitude, session.targetLocation.longitude,
+            parseFloat(lat), parseFloat(lng)
+        );
+        if (dist === null || isNaN(dist))
+            return res.status(400).json({ error: 'Invalid GPS coordinates' });
+        if (dist > 50) {
+            attendee.leftEarly = true;
+            console.log(`[HEARTBEAT] ${matricule} left early — ${dist.toFixed(0)}m from classroom. Clock frozen at ${attendee.lastSeen}`);
+            return res.status(403).json({
+                error: `You are ${dist.toFixed(0)}m from the classroom — attendance duration frozen.`,
+            });
+        }
+    }
+
+    // Confirmed present — refresh lastSeen and reset the missed-beat counter
+    attendee.lastSeen        = new Date().toISOString();
+    attendee.missedHeartbeats = 0;
+    console.log(`[HEARTBEAT] ${matricule} confirmed present. lastSeen=${attendee.lastSeen}`);
+    res.json({ ok: true, lastSeen: attendee.lastSeen });
+});
+
+// ── Periodic background job: increment missedHeartbeats for silent students ──
+// Runs every HEARTBEAT_INTERVAL_MINUTES. Students who exceed HEARTBEAT_GRACE_PERIODS
+// missed beats have their leftEarly flag set and clock frozen.
+setInterval(() => {
+    const cutoff = Date.now() - (HEARTBEAT_INTERVAL_MINUTES * 60 * 1000 * (HEARTBEAT_GRACE_PERIODS + 1));
+    for (const session of activeSessions.values()) {
+        for (const attendee of session.attendees) {
+            if (!attendee.heartbeatToken || attendee.leftEarly) continue;
+            const lastSeenMs = new Date(attendee.lastSeen).getTime();
+            if (lastSeenMs < cutoff) {
+                attendee.leftEarly = true;
+                console.log(`[HEARTBEAT] ${attendee.matricule} timed out — no heartbeat for ${HEARTBEAT_INTERVAL_MINUTES * (HEARTBEAT_GRACE_PERIODS + 1)} min. Clock frozen at ${attendee.lastSeen}`);
+            }
+        }
+    }
+}, HEARTBEAT_INTERVAL_MINUTES * 60 * 1000);
 
 app.post('/api/remove-attendee', (req, res) => {
     const { matricule, pin } = req.body;
