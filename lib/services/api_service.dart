@@ -9,6 +9,7 @@ class ApiService {
   static String get baseUrl => ServerConfig().baseUrl;
 
   String? _sessionPin;
+  // ignore: unused_field — stored for future token-auth headers
   String? _sessionToken;
 
   void setSessionPin(String pin) => _sessionPin = pin;

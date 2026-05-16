@@ -1,12 +1,13 @@
 import 'package:go_router/go_router.dart';
-import 'pages/home_page.dart';
-import 'pages/session_setup_page.dart';
-import 'pages/lecturer_dashboard_page.dart';
-import 'pages/student_registration_page.dart';
-import 'pages/signature_setup_page.dart';
-import 'pages/cloud_login_page.dart';
-import 'pages/cloud_sessions_page.dart';
-import 'pages/course_catalogue_page.dart';
+// ── Feature screens (new architecture) ───────────────────────────────────────
+import 'features/home/screens/home_screen.dart';
+import 'features/session/screens/session_setup_screen.dart';
+import 'features/session/screens/lecturer_dashboard_screen.dart';
+import 'features/attendance/screens/student_registration_screen.dart';
+import 'features/catalogue/screens/course_catalogue_screen.dart';
+import 'features/cloud/screens/cloud_sessions_screen.dart';
+import 'features/signature/screens/signature_setup_screen.dart';
+import 'features/cloud/screens/cloud_login_screen.dart';
 
 /// GoRouter configuration for app navigation
 class AppRouter {
@@ -17,56 +18,56 @@ class AppRouter {
         path: AppRoutes.home,
         name: 'home',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: HomePage(),
+          child: HomeScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.setup,
         name: 'setup',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: SessionSetupPage(),
+          child: SessionSetupScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.dashboard,
         name: 'dashboard',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: LecturerDashboardPage(),
+          child: LecturerDashboardScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.register,
         name: 'register',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: StudentRegistrationPage(),
+          child: StudentRegistrationScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.signature,
         name: 'signature',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: SignatureSetupPage(),
+          child: SignatureSetupScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.cloudLogin,
         name: 'cloudLogin',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: CloudLoginPage(),
+          child: CloudLoginScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.cloudSessions,
         name: 'cloudSessions',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: CloudSessionsPage(),
+          child: CloudSessionsScreen(),
         ),
       ),
       GoRoute(
         path: AppRoutes.catalogue,
         name: 'catalogue',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: CourseCataloguePage(),
+          child: CourseCatalogueScreen(),
         ),
       ),
     ],

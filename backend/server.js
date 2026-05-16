@@ -48,6 +48,23 @@ const PORT = 5501; // same port for both HTTP and HTTPS
 const HEARTBEAT_INTERVAL_MINUTES = 2;   // ← edit this to change check frequency
 const HEARTBEAT_GRACE_PERIODS    = 1;   // ← edit this to change missed-beat tolerance
 
+// ══════════════════════════════════════════════════════════════════
+//  DEPLOYMENT MODE — Hotspot  vs.  University VLAN
+//  ─────────────────────────────────────────────────────────────────
+//  SERVER_IP = null        → Windows Mobile Hotspot mode
+//      IP is auto-detected from network interfaces (192.168.137.1 etc.)
+//      Browser auto-opens on startup. DHCP not started.
+//
+//  SERVER_IP = '10.x.x.x' → University VLAN mode (ICTU_ATD)
+//      Fixed IP assigned by IT is used directly — no scanning.
+//      Browser auto-open is skipped (headless server).
+//      DHCP server starts and advertises this IP as the DNS server,
+//      making the captive portal fully automatic for connecting phones.
+//
+//  To switch modes: change this one constant and restart the server.
+// ══════════════════════════════════════════════════════════════════
+const SERVER_IP = null;   // ← set to e.g. '10.50.1.5' for university VLAN
+
 
 
 
@@ -856,7 +873,8 @@ function detectHotspotIP() {
 }
 
 // ====== START SERVER on port 5501 (HTTPS when certs present, HTTP otherwise) ======
-const detectedHotspotIP = detectHotspotIP();
+// SERVER_IP overrides auto-detection when set (university VLAN mode).
+const detectedHotspotIP = SERVER_IP || detectHotspotIP();
 
 function _logStartup(scheme, port) {
     const localIPs = getLocalIPs();
@@ -905,10 +923,12 @@ function _openBrowser(url) {
 app.listen(PORT, '0.0.0.0', () => {
     _logStartup('http', PORT);
     _addFirewallRule(PORT, 'OwHAS Attendance 5501', 'TCP');
-    _openBrowser('http://' + detectedHotspotIP + ':' + PORT + '/public/hotspot.html');
+    // Skip browser auto-open on the headless university server (SERVER_IP set).
+    if (!SERVER_IP) _openBrowser('http://' + detectedHotspotIP + ':' + PORT + '/public/hotspot.html');
     _startMdnsResponder(); // owhas.local — no port-53 conflicts
     _startDnsServer();     // owhas.lan   — needs port 53 free (best-effort)
     _startHttp80Redirect();
+    if (SERVER_IP) _startDhcpServer(); // VLAN mode: advertise our IP as DNS via DHCP
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -1037,6 +1057,62 @@ function _startDnsServer(attempt) {
         console.log('[DNS]  Students type  http://owhas.lan  — resolves to ' + detectedHotspotIP);
         _addFirewallRule(53, 'OwHAS DNS 53', 'UDP');
     });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  DHCP SERVER  (university VLAN mode only — called when SERVER_IP is set)
+//  ─────────────────────────────────────────────────────────────────
+//  Assigns IP addresses to student phones and advertises detectedHotspotIP
+//  as the DNS server.  This is the link that makes the captive portal fully
+//  automatic: every phone learns to use our DNS from its very first packet.
+//  Port 67 UDP — requires Administrator / root privileges.
+//  Install the dependency once:  cd backend && npm install dhcp
+// ══════════════════════════════════════════════════════════════════
+function _startDhcpServer() {
+    let dhcpLib;
+    try {
+        dhcpLib = require('dhcp');
+    } catch (e) {
+        console.log('[DHCP] Package not installed. Run: cd backend && npm install dhcp');
+        console.log('[DHCP] VLAN captive portal will still work if IT set DHCP option 6.');
+        return;
+    }
+
+    // Derive pool and broadcast from the fixed server IP
+    // e.g. '10.50.1.5' → pool 10.50.1.10–10.50.1.200, broadcast 10.50.1.255
+    const parts      = detectedHotspotIP.split('.');
+    const subnet     = `${parts[0]}.${parts[1]}.${parts[2]}`;
+    const rangeStart = `${subnet}.10`;
+    const rangeEnd   = `${subnet}.200`;
+    const broadcast  = `${subnet}.255`;
+
+    const server = dhcpLib.createServer({
+        range:     [rangeStart, rangeEnd],
+        netmask:   '255.255.255.0',
+        router:    [detectedHotspotIP],
+        dns:       [detectedHotspotIP],   // critical: phones use our DNS server
+        broadcast,
+        server:    detectedHotspotIP,
+        leaseTime: 3600,
+        randomIP:  true,
+    });
+
+    server.on('bound', ({ address, mac }) => {
+        console.log(`[DHCP] Assigned ${address} to ${mac}`);
+    });
+
+    server.on('error', err => {
+        if (err.code === 'EACCES')
+            console.log('[DHCP] Port 67 access denied — run as Administrator / root.');
+        else
+            console.log('[DHCP] Error: ' + err.message);
+        server.close();
+    });
+
+    server.listen();
+    console.log(`[DHCP] Serving ${rangeStart}–${rangeEnd}   DNS=${detectedHotspotIP}`);
+    console.log(`[DHCP] Phones will use ${detectedHotspotIP} as DNS → captive portal auto-fires`);
+    _addFirewallRule(67, 'OwHAS DHCP 67', 'UDP');
 }
 
 // ══════════════════════════════════════════════════════════════════
