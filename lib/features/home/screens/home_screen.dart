@@ -8,10 +8,6 @@ import '../widgets/home_animations.dart';
 import '../widgets/home_ui_components.dart';
 import '../widgets/role_card.dart';
 
-/// Refactored home screen — build() ≤ 60 lines.
-///
-/// The existing [HomePage] in `lib/pages/` is untouched until routing
-/// is migrated in a later phase.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -76,43 +72,78 @@ class _HomeScreenState extends State<HomeScreen>
           Positioned(bottom: 80, left: -70,
               child: AmbientBlob(size: 220, color: const Color(0xFF1A3A6B).withValues(alpha: 0.08))),
           SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: AppSpacing.paddingXl,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: Column(
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: AppSpacing.xxl),
-                      const SectionHeader(label: 'SELECT YOUR ROLE'),
-                      const SizedBox(height: AppSpacing.md),
-                      _buildLecturerCard(),
-                      const SizedBox(height: AppSpacing.xs),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () => context.pushRoute(RouteConstants.catalogue),
-                          icon:  const Icon(Icons.menu_book_outlined, size: 15),
-                          label: const Text('View Course Catalogue'),
-                          style: TextButton.styleFrom(foregroundColor: const Color(0xFF1A3A6B)),
-                        ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Scale relative to a 780 pt reference height.
+                // Clamped: never shrinks below 70 % or grows past 100 %.
+                final s = (constraints.maxHeight / 780.0).clamp(0.70, 1.0);
+                final iconSize  = 110.0 * s;
+                final titleSize = (34.0 * s).clamp(22.0, 34.0);
+                final hPad      = 24.0 * s;
+
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: hPad),
+                      child: Column(
+                        children: [
+                          const Spacer(flex: 3),
+
+                          // ── Header ──────────────────────────────────────
+                          _buildHeader(iconSize, titleSize, s),
+
+                          const Spacer(flex: 2),
+
+                          // ── Server status ────────────────────────────────
+                          const SectionHeader(label: 'SERVER STATUS'),
+                          SizedBox(height: 8 * s),
+                          const ServerStatusBanner(),
+
+                          const Spacer(flex: 3),
+
+                          // ── Role selection ───────────────────────────────
+                          const SectionHeader(label: 'SELECT YOUR ROLE'),
+                          SizedBox(height: 10 * s),
+                          _buildLecturerCard(),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () => context.pushRoute(RouteConstants.catalogue),
+                              icon:  const Icon(Icons.menu_book_outlined, size: 13),
+                              label: const Text('View Course Catalogue',
+                                  style: TextStyle(fontSize: 12)),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF1A3A6B),
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 6 * s),
+                          RoleCard(
+                            title: 'Student',
+                            subtitle: 'Register attendance for active sessions',
+                            icon: Icons.person_rounded,
+                            accentColor: const Color(0xFF2E6BB8),
+                            onTap: () => context.navigateTo(RouteConstants.register),
+                            entranceDelay: 320,
+                          ),
+
+                          const Spacer(flex: 3),
+
+                          // ── Footer ───────────────────────────────────────
+                          Text('Smart attendance · Powered by Wi-Fi hotspot',
+                              style: TextStyle(fontSize: 11,
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.28))),
+                          const Spacer(flex: 1),
+                        ],
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      RoleCard(
-                        title: 'Student', subtitle: 'Register attendance for active sessions',
-                        icon: Icons.person_rounded, accentColor: const Color(0xFF2E6BB8),
-                        onTap: () => context.navigateTo(RouteConstants.register),
-                        entranceDelay: 320,
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      Text('Smart attendance · Powered by Wi-Fi hotspot',
-                          style: TextStyle(fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3))),
-                    ],
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -122,44 +153,56 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Private builders ──────────────────────────────────────────────────────────
 
-  Widget _buildHeader() => AnimatedBuilder(
-    animation: _headerAnim,
-    builder: (_, child) => Opacity(
-      opacity: _headerAnim.value,
-      child:   Transform.translate(offset: Offset(0, -24 * (1 - _headerAnim.value)), child: child),
-    ),
-    child: Column(
-      children: [
-        const FloatingIconBox(child: AnimatedRadarIcon()),
-        const SizedBox(height: AppSpacing.xl),
-        Text('Offline Hotspot Attendance',
-            style: context.textStyles.displaySmall?.bold, textAlign: TextAlign.center),
-        const SizedBox(height: AppSpacing.sm),
-        const Wrap(
-          alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
+  Widget _buildHeader(double iconSize, double titleSize, double s) =>
+      AnimatedBuilder(
+        animation: _headerAnim,
+        builder: (_, child) => Opacity(
+          opacity: _headerAnim.value,
+          child: Transform.translate(
+              offset: Offset(0, -24 * (1 - _headerAnim.value)), child: child),
+        ),
+        child: Column(
           children: [
-            BadgePill(icon: Icons.wifi_off_rounded,    label: 'Offline-first', color: Color(0xFF1A3A6B)),
-            BadgePill(icon: Icons.verified_user_rounded, label: 'Secure',       color: Color(0xFF27AE60)),
-            BadgePill(icon: Icons.backup_rounded,       label: 'Cloud-based',   color: Color(0xFF27AE60)),
+            // FittedBox scales the fixed FloatingIconBox to our computed iconSize
+            SizedBox(
+              width: iconSize, height: iconSize,
+              child: const FittedBox(
+                fit: BoxFit.contain,
+                child: FloatingIconBox(child: AnimatedRadarIcon()),
+              ),
+            ),
+            SizedBox(height: 14 * s),
+            Text('Offline Hotspot Attendance',
+                style: TextStyle(
+                  fontSize: titleSize,
+                  fontWeight: FontWeight.bold,
+                  height: 1.2,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                textAlign: TextAlign.center),
+            SizedBox(height: 8 * s),
+            const Wrap(
+              alignment: WrapAlignment.center, spacing: 6, runSpacing: 6,
+              children: [
+                BadgePill(icon: Icons.wifi_off_rounded,      label: 'Offline-first', color: Color(0xFF1A3A6B)),
+                BadgePill(icon: Icons.verified_user_rounded, label: 'Secure',        color: Color(0xFF27AE60)),
+                BadgePill(icon: Icons.backup_rounded,        label: 'Cloud-based',   color: Color(0xFF27AE60)),
+              ],
+            ),
           ],
         ),
-      ],
-    ),
-  );
+      );
 
   Widget _buildLecturerCard() => Consumer<SessionStateNotifier>(
-    builder: (ctx, sn, _) {
-      final hasSession = sn.hasActiveSession;
-      return RoleCard(
-        title:       'Lecturer',
-        subtitle:    hasSession
-            ? 'Active session: ${sn.activeSession!.courseName}'
-            : 'Create and manage attendance sessions',
-        icon:        Icons.school_rounded,
-        accentColor: const Color(0xFF1A3A6B),
-        onTap:       () => _handleLecturerTap(ctx),
-        entranceDelay: 180,
-      );
-    },
+    builder: (ctx, sn, _) => RoleCard(
+      title:       'Lecturer',
+      subtitle:    sn.hasActiveSession
+          ? 'Active session: ${sn.activeSession!.courseName}'
+          : 'Create and manage attendance sessions',
+      icon:        Icons.school_rounded,
+      accentColor: const Color(0xFF1A3A6B),
+      onTap:       () => _handleLecturerTap(ctx),
+      entranceDelay: 180,
+    ),
   );
 }

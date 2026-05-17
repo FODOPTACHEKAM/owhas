@@ -15,6 +15,7 @@ import 'services/face_recognition_service.dart';
 import 'features/session/notifiers/session_state_notifier.dart';
 import 'features/attendance/notifiers/attendance_record_notifier.dart';
 import 'features/reports/notifiers/report_notifier.dart';
+import 'features/home/notifiers/server_status_notifier.dart';
 
 /// Non-singleton services shared across notifiers so they hold one consistent
 /// in-memory state (e.g. the session token set on ApiService).
@@ -66,6 +67,9 @@ class MyApp extends StatelessWidget {
             fileService: _svc.file,
             apiService:  _svc.api,
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ServerStatusNotifier()..initialize(),
         ),
       ],
       child: MaterialApp.router(
