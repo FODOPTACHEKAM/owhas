@@ -17,7 +17,10 @@ Future<_ServerDetectionResult> _detectServerInBackground(void _) async {
   const Duration strictTimeout = Duration(milliseconds: 800);
 
   // 1. Fixed candidates — covers hotspot gateways and known PC IPs.
+  //    University VLAN: uncomment the line below and set the IP assigned by IT.
+  //    It must be first so the app connects instantly without scanning.
   final fixedCandidates = <String>[
+    // 'http://10.50.1.5:5501',   // ← University VLAN fixed IP (uncomment + edit when deployed)
     'http://192.168.137.1:5501',  // Windows Mobile Hotspot
     'http://10.0.0.1:5501',
     'http://192.168.43.1:5501',   // Android hotspot
